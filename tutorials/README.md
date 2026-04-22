@@ -78,7 +78,7 @@ Learn visually! These videos cover the same tools you'll install:
 1. **Re-read the step** — every command has a ✅ verification to check if it worked
 2. **Check the ⚠️ troubleshooting** below each step
 3. **Ask David** — in class or via email
-4. **Open a GitHub Issue** — [github.com/dweigend/simple_flight/issues](https://github.com/dweigend/simple_flight/issues)
+4. **Open a GitHub Issue** — [github.com/dweigend/neural-flight-template/issues](https://github.com/dweigend/neural-flight-template/issues)
 
 ---
 

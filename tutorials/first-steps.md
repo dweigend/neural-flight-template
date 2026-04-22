@@ -30,10 +30,10 @@ Open your terminal (Ghostty / Windows Terminal) and run:
 cd ~
 
 # Download the project from GitHub
-git clone https://github.com/dweigend/simple_flight.git
+git clone https://github.com/dweigend/neural-flight-template.git
 
 # Go into the project folder
-cd simple_flight
+cd neural-flight-template
 ```
 
 **✅ Verify:** You should see project files:
@@ -61,7 +61,7 @@ bun install
 
 A `node_modules/` folder now exists in your project.
 
-> ⚠️ **Errors?** Make sure you're inside the `simple_flight` folder (`cd simple_flight`) and that Bun is installed (`bun --version`).
+> ⚠️ **Errors?** Make sure you're inside the `neural-flight-template` folder (`cd neural-flight-template`) and that Bun is installed (`bun --version`).
 
 ---
 
@@ -127,7 +127,7 @@ Open a **new terminal** (keep the dev server running!) and launch Zed:
 
 ```bash
 # Open the project in Zed (run from the project folder)
-cd ~/simple_flight
+cd ~/neural-flight-template
 zed .
 ```
 
@@ -146,7 +146,7 @@ Open a new terminal (or use Zed's built-in terminal) and start OpenCode:
 
 ```bash
 # Make sure you're in the project folder
-cd ~/simple_flight
+cd ~/neural-flight-template
 
 # Start OpenCode
 opencode
