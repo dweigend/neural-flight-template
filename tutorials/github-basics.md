@@ -127,6 +127,8 @@ git push -u origin add-my-experience
 
 **✅ Verify:** No errors. Your branch is now on GitHub!
 
+> ⚠️ **Push rejected?** If GitHub says you do not have permission to push to `dweigend/neural-flight-template`, stop here and follow [No Push Access? Use a Fork](#-no-push-access-use-a-fork).
+
 ### 6. 📝 Create the Pull Request
 
 **In Zed:**
@@ -174,6 +176,163 @@ git branch -d add-my-experience
 ```
 
 Now start again from **Step 2** for your next task!
+
+---
+
+## 🍴 No Push Access? Use a Fork
+
+If you are **not** listed as a contributor on `dweigend/neural-flight-template`, GitHub may reject this command:
+
+```bash
+git push -u origin add-my-experience
+```
+
+In that case, the workaround is:
+
+```text
+original repo → fork to your GitHub account → push to your fork → open PR back to dweigend/neural-flight-template
+```
+
+You only need to set up the fork once per computer.
+
+### Option A — Command Line Version
+
+Use this if you want to stay in the terminal and already have `gh` logged in.
+
+#### 1. Create your fork on GitHub
+
+```bash
+gh repo fork dweigend/neural-flight-template --clone=false
+```
+
+This creates:
+- upstream repo: `dweigend/neural-flight-template`
+- your fork: `YOUR_GITHUB_USERNAME/neural-flight-template`
+
+#### 2. Rename the original remote to `upstream`
+
+Right now your local repo probably uses `origin` for David's repo. For fork-based work, it is clearer to keep:
+- `upstream` = the original class repo
+- `origin` = your personal fork
+
+```bash
+git remote rename origin upstream
+```
+
+#### 3. Add your fork as the new `origin`
+
+Replace `YOUR_GITHUB_USERNAME` with your actual GitHub username.
+
+```bash
+git remote add origin https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template.git
+```
+
+Check that both remotes exist:
+
+```bash
+git remote -v
+```
+
+You should see something like:
+
+```text
+origin   https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template.git
+upstream https://github.com/dweigend/neural-flight-template.git
+```
+
+#### 4. Push your branch to your fork
+
+If you already created your branch and commit earlier in this tutorial, push that same branch now:
+
+```bash
+git push -u origin add-my-experience
+```
+
+From now on, additional updates on the same branch are just:
+
+```bash
+git push
+```
+
+#### 5. Open a Pull Request from your fork back to the class repo
+
+```bash
+gh pr create --repo dweigend/neural-flight-template --base main --head YOUR_GITHUB_USERNAME:add-my-experience --title "feat: ✨ add underwater experience" --body "My first VR experience with a coral reef and fish."
+```
+
+This creates a PR with:
+- base repo: `dweigend/neural-flight-template`
+- base branch: `main`
+- head repo: `YOUR_GITHUB_USERNAME/neural-flight-template`
+- head branch: `add-my-experience`
+
+#### 6. Keep your fork in sync later
+
+Before your next task, update from the original repo:
+
+```bash
+git checkout main
+git pull upstream main
+git push origin main
+```
+
+Then create your next feature branch from updated `main`.
+
+### Option B — GitHub Web UI Version
+
+Use this if you prefer to create the fork in the browser.
+
+#### 1. Create the fork in GitHub
+
+1. Open [github.com/dweigend/neural-flight-template](https://github.com/dweigend/neural-flight-template)
+2. Click **Fork** in the top-right
+3. Create a new fork under **your own GitHub account**
+4. Wait until GitHub creates `YOUR_GITHUB_USERNAME/neural-flight-template`
+
+#### 2. Connect your local repo to both GitHub repos
+
+You already cloned the original repo earlier in this tutorial, so now update the remotes:
+
+```bash
+git remote rename origin upstream
+git remote add origin https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template.git
+git remote -v
+```
+
+After this:
+- `upstream` points to `dweigend/neural-flight-template`
+- `origin` points to your fork
+
+#### 3. Push your branch to your fork
+
+```bash
+git push -u origin add-my-experience
+```
+
+#### 4. Open the Pull Request in GitHub
+
+1. Open your fork: `https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template`
+2. GitHub usually shows a yellow banner for your branch
+3. Click **Contribute** → **Open pull request**
+4. Make sure the PR compares:
+   - base repository: `dweigend/neural-flight-template`
+   - base: `main`
+   - head repository: `YOUR_GITHUB_USERNAME/neural-flight-template`
+   - compare: `add-my-experience`
+5. Write the PR title and description
+6. Click **Create pull request**
+
+#### 5. Continue updating the same PR
+
+If David asks for changes:
+
+```bash
+git add .
+git commit -m "fix: 🐛 address review feedback"
+git push
+```
+
+Because your branch tracks your fork, the existing PR updates automatically.
 
 ---
 
@@ -365,7 +524,162 @@ git pull
 # Delete the old branch (optional)
 git branch -d my-terrain-feature
 ```
+---
 
+## 🍴 No Push Access? Use a Fork
+
+If you are **not** listed as a contributor on `dweigend/neural-flight-template`, GitHub may reject this command:
+
+```bash
+git push -u origin add-my-experience
+```
+
+In that case, the workaround is:
+
+```text
+original repo → fork to your GitHub account → push to your fork → open PR back to dweigend/neural-flight-template
+```
+
+You only need to set up the fork once per computer.
+
+### Option A — Command Line Version
+
+Use this if you want to stay in the terminal and already have `gh` logged in.
+
+#### 1. Create your fork on GitHub
+
+```bash
+gh repo fork dweigend/neural-flight-template --clone=false
+```
+
+This creates:
+- upstream repo: `dweigend/neural-flight-template`
+- your fork: `YOUR_GITHUB_USERNAME/neural-flight-template`
+
+#### 2. Rename the original remote to `upstream`
+
+Right now your local repo probably uses `origin` for David's repo. For fork-based work, it is clearer to keep:
+- `upstream` = the original class repo
+- `origin` = your personal fork
+
+```bash
+git remote rename origin upstream
+```
+
+#### 3. Add your fork as the new `origin`
+
+Replace `YOUR_GITHUB_USERNAME` with your actual GitHub username.
+
+```bash
+git remote add origin https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template.git
+```
+
+Check that both remotes exist:
+
+```bash
+git remote -v
+```
+
+You should see something like:
+
+```text
+origin   https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template.git
+upstream https://github.com/dweigend/neural-flight-template.git
+```
+
+#### 4. Push your branch to your fork
+
+If you already created your branch and commit earlier in this tutorial, push that same branch now:
+
+```bash
+git push -u origin add-my-experience
+```
+
+From now on, additional updates on the same branch are just:
+
+```bash
+git push
+```
+
+#### 5. Open a Pull Request from your fork back to the class repo
+
+```bash
+gh pr create --repo dweigend/neural-flight-template --base main --head YOUR_GITHUB_USERNAME:add-my-experience --title "feat: ✨ add underwater experience" --body "My first VR experience with a coral reef and fish."
+```
+
+This creates a PR with:
+- base repo: `dweigend/neural-flight-template`
+- base branch: `main`
+- head repo: `YOUR_GITHUB_USERNAME/neural-flight-template`
+- head branch: `add-my-experience`
+
+#### 6. Keep your fork in sync later
+
+Before your next task, update from the original repo:
+
+```bash
+git checkout main
+git pull upstream main
+git push origin main
+```
+
+Then create your next feature branch from updated `main`.
+
+### Option B — GitHub Web UI Version
+
+Use this if you prefer to create the fork in the browser.
+
+#### 1. Create the fork in GitHub
+
+1. Open [github.com/dweigend/neural-flight-template](https://github.com/dweigend/neural-flight-template)
+2. Click **Fork** in the top-right
+3. Create a new fork under **your own GitHub account**
+4. Wait until GitHub creates `YOUR_GITHUB_USERNAME/neural-flight-template`
+
+#### 2. Connect your local repo to both GitHub repos
+
+You already cloned the original repo earlier in this tutorial, so now update the remotes:
+
+```bash
+git remote rename origin upstream
+git remote add origin https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template.git
+git remote -v
+```
+
+After this:
+- `upstream` points to `dweigend/neural-flight-template`
+- `origin` points to your fork
+
+#### 3. Push your branch to your fork
+
+```bash
+git push -u origin add-my-experience
+```
+
+#### 4. Open the Pull Request in GitHub
+
+1. Open your fork: `https://github.com/YOUR_GITHUB_USERNAME/neural-flight-template`
+2. GitHub usually shows a yellow banner for your branch
+3. Click **Contribute** → **Open pull request**
+4. Make sure the PR compares:
+   - base repository: `dweigend/neural-flight-template`
+   - base: `main`
+   - head repository: `YOUR_GITHUB_USERNAME/neural-flight-template`
+   - compare: `add-my-experience`
+5. Write the PR title and description
+6. Click **Create pull request**
+
+#### 5. Continue updating the same PR
+
+If David asks for changes:
+
+```bash
+git add .
+git commit -m "fix: 🐛 address review feedback"
+git push
+```
+
+Because your branch tracks your fork, the existing PR updates automatically.
 ---
 
 ## 🆘 Common Situations
