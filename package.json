@@ -37,6 +37,7 @@
 		"qrcode": "^1.5.4",
 		"simplex-noise": "^4.0.3",
 		"svelte-dnd-action": "^0.9.69",
-		"three": "^0.182.0"
+		"three": "^0.182.0",
+		"three-mesh-bvh": "^0.9.9"
 	}
 }
