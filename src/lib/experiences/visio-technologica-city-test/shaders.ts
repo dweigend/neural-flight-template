@@ -1,5 +1,9 @@
 import * as THREE from "three";
 
+type ShaderCompileParameters = Parameters<
+  THREE.Material["onBeforeCompile"]
+>[0];
+
 const pointcloudVertexShader = `
 attribute float aVisibility;
 attribute vec3 aColor;
@@ -80,6 +84,60 @@ void main() {
 }
 `;
 
+const textureRevealVertexInjection = `
+varying vec3 vTextureRevealWorldPosition;
+`;
+
+const textureRevealVertexWorldPosition = `
+vTextureRevealWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+`;
+
+const textureRevealFragmentInjection = `
+uniform sampler2D uTextureRevealDepthMap;
+uniform mat4 uTextureRevealProjectionMatrix;
+uniform float uTextureRevealDepthBias;
+
+varying vec3 vTextureRevealWorldPosition;
+
+float readTextureRevealDepth(vec2 uv) {
+	return unpackRGBAToDepth(texture2D(uTextureRevealDepthMap, uv));
+}
+
+bool isTextureRevealVisible() {
+	vec4 projected = uTextureRevealProjectionMatrix * vec4(vTextureRevealWorldPosition, 1.0);
+	if (projected.w <= 0.0) {
+		return false;
+	}
+
+	vec3 revealUv = projected.xyz / projected.w;
+	if (
+		revealUv.x < 0.0 ||
+		revealUv.x > 1.0 ||
+		revealUv.y < 0.0 ||
+		revealUv.y > 1.0 ||
+		revealUv.z < 0.0 ||
+		revealUv.z > 1.0
+	) {
+		return false;
+	}
+
+	float nearestDepth = readTextureRevealDepth(revealUv.xy);
+	return revealUv.z <= nearestDepth + uTextureRevealDepthBias;
+}
+`;
+
+const textureRevealFragmentMask = `
+if (!isTextureRevealVisible()) {
+	discard;
+}
+`;
+
+export interface TextureRevealUniforms {
+  uTextureRevealDepthBias: { value: number };
+  uTextureRevealDepthMap: { value: THREE.Texture };
+  uTextureRevealProjectionMatrix: { value: THREE.Matrix4 };
+}
+
 export function createPointcloudMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: pointcloudVertexShader,
@@ -109,4 +167,46 @@ export function createWireframeMaterial(): THREE.ShaderMaterial {
       uOrigin: { value: new THREE.Vector3() },
     },
   });
+}
+
+export function createTextureRevealMaterial(
+  sourceMaterial: THREE.Material,
+  uniforms: TextureRevealUniforms,
+): THREE.Material {
+  const material = sourceMaterial.clone();
+  material.depthTest = true;
+  material.depthWrite = true;
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = 1;
+  material.polygonOffsetUnits = 1;
+  material.side = THREE.DoubleSide;
+  material.onBeforeCompile = (shader: ShaderCompileParameters): void => {
+    shader.uniforms.uTextureRevealDepthBias =
+      uniforms.uTextureRevealDepthBias;
+    shader.uniforms.uTextureRevealDepthMap = uniforms.uTextureRevealDepthMap;
+    shader.uniforms.uTextureRevealProjectionMatrix =
+      uniforms.uTextureRevealProjectionMatrix;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>\n${textureRevealVertexInjection}`,
+      )
+      .replace(
+        "#include <project_vertex>",
+        `#include <project_vertex>\n${textureRevealVertexWorldPosition}`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>\n#include <packing>\n${textureRevealFragmentInjection}`,
+      )
+      .replace(
+        "#include <clipping_planes_fragment>",
+        `#include <clipping_planes_fragment>\n${textureRevealFragmentMask}`,
+      );
+  };
+  material.needsUpdate = true;
+
+  return material;
 }

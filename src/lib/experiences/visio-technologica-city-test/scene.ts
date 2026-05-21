@@ -6,39 +6,57 @@ import {
   disposeBoundsTree,
 } from "three-mesh-bvh";
 import type { ExperienceState, SetupContext, TickContext } from "../types";
-import { createPointcloudMaterial, createWireframeMaterial } from "./shaders";
+import {
+  createPointcloudMaterial,
+  createTextureRevealMaterial,
+  createWireframeMaterial,
+  type TextureRevealUniforms,
+} from "./shaders";
 
-const MODEL_URL = "/models/abandoned_alley_game_ready.glb";
+const MODEL_URL = "/models/apartment_floor_plan.glb";
 const MODEL_TARGET_SIZE = 25;
+const POINTCLOUD_ENABLED = false;
 const POINT_ORIGIN_POSITION = new THREE.Vector3(-2, 6, -0.7);
-const WIREFRAME_ORIGIN_POSITION = new THREE.Vector3(2, 7, 0.7);
-const POINT_RAY_ROTATION_DEG = new THREE.Vector3(-45, -120, 0);
-const WIREFRAME_RAY_ROTATION_DEG = new THREE.Vector3(-27, 83, 0);
-const POINT_RAY_FOV_DEG = 45;
-const WIREFRAME_RAY_FOV_DEG = 45;
-const RAY_PAN_ANGLE_DEG = 20;
+const WIREFRAME_ORIGIN_POSITION = new THREE.Vector3(4, 10, 7);
+const TEXTURE_ORIGIN_POSITION = new THREE.Vector3(4, 10, 8);
+const POINT_RAY_ROTATION_DEG = new THREE.Vector3(-45, 0, 0);
+const WIREFRAME_RAY_ROTATION_DEG = new THREE.Vector3(-27, 80, 0);
+const TEXTURE_RAY_ROTATION_DEG = new THREE.Vector3(-27, 20, 0);
+const POINT_RAY_FOV_DEG = 60;
+const WIREFRAME_RAY_FOV_DEG = 60;
+const TEXTURE_RAY_FOV_DEG = 60;
+const RAY_PAN_ANGLE_DEG = 40;
 const RAY_PAN_SPEED = 0.6;
+const TEXTURE_RAY_PAN_ANGLE_DEG = 15;
+const TEXTURE_RAY_PAN_SPEED = 0.35;
 const POINT_SAMPLING_FOV_DEG = POINT_RAY_FOV_DEG + RAY_PAN_ANGLE_DEG * 2;
 const POINT_COUNT = 60_000;
 const POINT_VISIBILITY_RAYS_PER_BATCH = 1350;
 const WIREFRAME_VISIBILITY_RAYS_PER_BATCH = 1_100;
 const VISIBILITY_UPDATE_FRAME_INTERVAL = 2;
 const VISIBILITY_EPSILON = 0.08;
+const TEXTURE_REVEAL_DEPTH_SIZE = 1024;
+const TEXTURE_REVEAL_DEPTH_BIAS = 0.000_2;
+const TEXTURE_REVEAL_NEAR = 0.2;
+const TEXTURE_REVEAL_FAR = 80;
 const ORIGIN_PATH_RADIUS = 2;
 const ORIGIN_PATH_HEIGHT = 2.4;
 
-const CAMERA_ORBIT_SPEED = 1.5;
-const CAMERA_ZOOM_SPEED = 6;
-const CAMERA_MIN_RADIUS = 5;
-const CAMERA_MAX_RADIUS = 26;
+const CAMERA_TURN_SPEED = 1.2;
+const CAMERA_TILT_SPEED = 1.0;
+const CAMERA_MOVE_SPEED = 7;
 const CAMERA_HEIGHT = 9;
+const CAMERA_START_PITCH_DEG = -28;
+const CAMERA_START_POSITION = new THREE.Vector3(0, CAMERA_HEIGHT, 14);
 
 export interface VisioTechnologicaCityTestState extends ExperienceState {
   camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
   modelRoot: THREE.Group;
   sourceMeshes: THREE.Mesh[];
   pointRayConfig: RotationConfig;
   wireframeRayConfig: RotationConfig;
+  textureRayConfig: RotationConfig;
   pointGeometry: THREE.BufferGeometry;
   pointMaterial: THREE.ShaderMaterial;
   points: THREE.Points;
@@ -49,10 +67,20 @@ export interface VisioTechnologicaCityTestState extends ExperienceState {
   wireframe: THREE.LineSegments;
   wireframeWorldPositions: Float32Array;
   wireframeVisibilityValues: Float32Array;
+  textureRevealMeshes: THREE.Mesh[];
+  textureRevealMaterials: THREE.Material[];
+  textureDepthCamera: THREE.PerspectiveCamera;
+  textureDepthMaterials: THREE.MeshDepthMaterial[];
+  textureDepthRenderTarget: THREE.WebGLRenderTarget;
+  textureDepthScene: THREE.Scene;
+  textureProjectionMatrix: THREE.Matrix4;
+  textureRevealUniforms: TextureRevealUniforms;
   originMarker: THREE.Mesh;
   wireOriginMarker: THREE.Mesh;
+  textureOriginMarker: THREE.Mesh;
   pointDirectionHelper: THREE.ArrowHelper;
   wireDirectionHelper: THREE.ArrowHelper;
+  textureDirectionHelper: THREE.ArrowHelper;
   originPath: THREE.Line;
   grid: THREE.GridHelper;
   raycaster: THREE.Raycaster;
@@ -63,16 +91,37 @@ export interface VisioTechnologicaCityTestState extends ExperienceState {
   frame: number;
   pointVisibilityCursor: number;
   wireframeVisibilityCursor: number;
-  cameraAzimuth: number;
-  cameraRadius: number;
+  cameraPitch: number;
+  cameraYaw: number;
 }
 
 const _originWorld = new THREE.Vector3();
 const _pointRayOrigin = new THREE.Vector3();
 const _wireRayOrigin = new THREE.Vector3();
+const _textureRayOrigin = new THREE.Vector3();
 const _direction = new THREE.Vector3();
 const _localDirection = new THREE.Vector3();
-const _cameraTarget = new THREE.Vector3(0, 1.4, 0);
+const _cameraForward = new THREE.Vector3();
+const _cameraRight = new THREE.Vector3();
+const _previousClearColor = new THREE.Color();
+const _textureProjectionBias = new THREE.Matrix4().set(
+  0.5,
+  0,
+  0,
+  0.5,
+  0,
+  0.5,
+  0,
+  0.5,
+  0,
+  0,
+  0.5,
+  0.5,
+  0,
+  0,
+  0,
+  1,
+);
 let bvhInstalled = false;
 
 interface RotationConfig {
@@ -92,6 +141,13 @@ interface WireframeData {
   worldPositions: Float32Array;
 }
 
+interface TextureRevealMeshData {
+  depthMaterials: THREE.MeshDepthMaterial[];
+  depthMeshes: THREE.Mesh[];
+  revealMaterials: THREE.Material[];
+  revealMeshes: THREE.Mesh[];
+}
+
 interface TriangleRef {
   cumulativeArea: number;
   mesh: THREE.Mesh;
@@ -108,6 +164,10 @@ type ColorSampleMaterial = THREE.Material & {
   color?: THREE.Color;
   map?: THREE.Texture | null;
   vertexColors?: boolean;
+};
+type AlphaDepthMaterialSource = THREE.Material & {
+  alphaMap?: THREE.Texture | null;
+  map?: THREE.Texture | null;
 };
 type SizedCanvasImageSource = CanvasImageSource & {
   height: number;
@@ -565,7 +625,11 @@ function samplePointCloud(
       .addScaledVector(c, wc);
 
     if (
-      !isWorldPointInsideDirectionalFrustum(point, samplingOrigin, samplingConfig)
+      !isWorldPointInsideDirectionalFrustum(
+        point,
+        samplingOrigin,
+        samplingConfig,
+      )
     ) {
       continue;
     }
@@ -623,6 +687,162 @@ function buildWireframeData(meshes: THREE.Mesh[]): WireframeData {
   };
 }
 
+function createTextureDepthRenderTarget(): THREE.WebGLRenderTarget {
+  const renderTarget = new THREE.WebGLRenderTarget(
+    TEXTURE_REVEAL_DEPTH_SIZE,
+    TEXTURE_REVEAL_DEPTH_SIZE,
+    {
+      depthBuffer: true,
+      format: THREE.RGBAFormat,
+      magFilter: THREE.NearestFilter,
+      minFilter: THREE.NearestFilter,
+      stencilBuffer: false,
+      type: THREE.UnsignedByteType,
+    },
+  );
+  renderTarget.texture.name = "future-city-texture-reveal-packed-depth";
+  renderTarget.texture.generateMipmaps = false;
+
+  return renderTarget;
+}
+
+function copyWorldTransform(source: THREE.Mesh, target: THREE.Mesh): void {
+  target.matrixAutoUpdate = false;
+  target.matrix.copy(source.matrixWorld);
+  target.matrixWorld.copy(source.matrixWorld);
+}
+
+function createTextureRevealMaterialSet(
+  sourceMaterial: THREE.Material | THREE.Material[],
+  uniforms: TextureRevealUniforms,
+  revealMaterials: THREE.Material[],
+): THREE.Material | THREE.Material[] {
+  if (Array.isArray(sourceMaterial)) {
+    return sourceMaterial.map((material) => {
+      const revealMaterial = createTextureRevealMaterial(material, uniforms);
+      revealMaterials.push(revealMaterial);
+      return revealMaterial;
+    });
+  }
+
+  const revealMaterial = createTextureRevealMaterial(sourceMaterial, uniforms);
+  revealMaterials.push(revealMaterial);
+  return revealMaterial;
+}
+
+function createTextureDepthMaterial(
+  sourceMaterial: THREE.Material,
+): THREE.MeshDepthMaterial {
+  const source = sourceMaterial as AlphaDepthMaterialSource;
+  const alphaTest =
+    source.alphaTest > 0 ? source.alphaTest : source.transparent ? 0.5 : 0;
+  const material = new THREE.MeshDepthMaterial({
+    alphaMap: source.alphaMap ?? null,
+    alphaTest,
+    blending: THREE.NoBlending,
+    depthPacking: THREE.RGBADepthPacking,
+    map: source.map ?? null,
+    side: THREE.DoubleSide,
+  });
+  material.opacity = source.opacity;
+
+  return material;
+}
+
+function createTextureDepthMaterialSet(
+  sourceMaterial: THREE.Material | THREE.Material[],
+  depthMaterials: THREE.MeshDepthMaterial[],
+): THREE.MeshDepthMaterial | THREE.MeshDepthMaterial[] {
+  if (Array.isArray(sourceMaterial)) {
+    return sourceMaterial.map((material) => {
+      const depthMaterial = createTextureDepthMaterial(material);
+      depthMaterials.push(depthMaterial);
+      return depthMaterial;
+    });
+  }
+
+  const depthMaterial = createTextureDepthMaterial(sourceMaterial);
+  depthMaterials.push(depthMaterial);
+  return depthMaterial;
+}
+
+function createTextureRevealMeshes(
+  sourceMeshes: THREE.Mesh[],
+  uniforms: TextureRevealUniforms,
+): TextureRevealMeshData {
+  const depthMaterials: THREE.MeshDepthMaterial[] = [];
+  const depthMeshes: THREE.Mesh[] = [];
+  const revealMaterials: THREE.Material[] = [];
+  const revealMeshes: THREE.Mesh[] = [];
+
+  for (const sourceMesh of sourceMeshes) {
+    const revealMesh = new THREE.Mesh(
+      sourceMesh.geometry,
+      createTextureRevealMaterialSet(
+        sourceMesh.material,
+        uniforms,
+        revealMaterials,
+      ),
+    );
+    revealMesh.name = `${sourceMesh.name || "mesh"}-texture-reveal`;
+    copyWorldTransform(sourceMesh, revealMesh);
+    revealMeshes.push(revealMesh);
+
+    const depthMesh = new THREE.Mesh(
+      sourceMesh.geometry,
+      createTextureDepthMaterialSet(sourceMesh.material, depthMaterials),
+    );
+    depthMesh.name = `${sourceMesh.name || "mesh"}-texture-depth`;
+    copyWorldTransform(sourceMesh, depthMesh);
+    depthMeshes.push(depthMesh);
+  }
+
+  return { depthMaterials, depthMeshes, revealMaterials, revealMeshes };
+}
+
+function updateTextureRevealProjection(
+  state: VisioTechnologicaCityTestState,
+): void {
+  const originPosition =
+    state.textureOriginMarker.getWorldPosition(_textureRayOrigin);
+
+  state.textureDepthCamera.position.copy(originPosition);
+  state.textureDepthCamera.quaternion.copy(state.textureRayConfig.quaternion);
+  state.textureDepthCamera.fov = state.textureRayConfig.fovDeg;
+  state.textureDepthCamera.aspect = 1;
+  state.textureDepthCamera.near = TEXTURE_REVEAL_NEAR;
+  state.textureDepthCamera.far = TEXTURE_REVEAL_FAR;
+  state.textureDepthCamera.updateProjectionMatrix();
+  state.textureDepthCamera.updateMatrixWorld(true);
+  state.textureDepthCamera.matrixWorldInverse
+    .copy(state.textureDepthCamera.matrixWorld)
+    .invert();
+  state.textureProjectionMatrix
+    .copy(_textureProjectionBias)
+    .multiply(state.textureDepthCamera.projectionMatrix)
+    .multiply(state.textureDepthCamera.matrixWorldInverse);
+}
+
+function renderTextureRevealDepth(state: VisioTechnologicaCityTestState): void {
+  const renderer = state.renderer;
+  const previousRenderTarget = renderer.getRenderTarget();
+  const previousXrEnabled = renderer.xr.enabled;
+  const previousAutoClear = renderer.autoClear;
+  const previousClearAlpha = renderer.getClearAlpha();
+  renderer.getClearColor(_previousClearColor);
+
+  renderer.xr.enabled = false;
+  renderer.autoClear = true;
+  renderer.setClearColor(0xffffff, 1);
+  renderer.setRenderTarget(state.textureDepthRenderTarget);
+  renderer.clear();
+  renderer.render(state.textureDepthScene, state.textureDepthCamera);
+  renderer.setRenderTarget(previousRenderTarget);
+  renderer.setClearColor(_previousClearColor, previousClearAlpha);
+  renderer.autoClear = previousAutoClear;
+  renderer.xr.enabled = previousXrEnabled;
+}
+
 function createOriginMarker(color: string, emissive: string): THREE.Mesh {
   const geometry = new THREE.SphereGeometry(0.18, 24, 16);
   const material = new THREE.MeshStandardMaterial({
@@ -674,7 +894,7 @@ function createOriginPath(): THREE.Line {
   return new THREE.Line(geometry, material);
 }
 
-function updateCameraOrbit(
+function updateCameraFreeMovement(
   state: VisioTechnologicaCityTestState,
   delta: number,
 ): void {
@@ -682,31 +902,55 @@ function updateCameraOrbit(
   const right = state.keys.has("ArrowRight");
   const forward = state.keys.has("ArrowUp");
   const backward = state.keys.has("ArrowDown");
+  const pitchUp = state.keys.has("w");
+  const pitchDown = state.keys.has("s");
+  const strafeLeft = state.keys.has("a");
+  const strafeRight = state.keys.has("d");
 
   if (left) {
-    state.cameraAzimuth += CAMERA_ORBIT_SPEED * delta;
+    state.cameraYaw += CAMERA_TURN_SPEED * delta;
   }
   if (right) {
-    state.cameraAzimuth -= CAMERA_ORBIT_SPEED * delta;
+    state.cameraYaw -= CAMERA_TURN_SPEED * delta;
   }
-  if (forward) {
-    state.cameraRadius -= CAMERA_ZOOM_SPEED * delta;
+  if (pitchUp) {
+    state.cameraPitch += CAMERA_TILT_SPEED * delta;
   }
-  if (backward) {
-    state.cameraRadius += CAMERA_ZOOM_SPEED * delta;
+  if (pitchDown) {
+    state.cameraPitch -= CAMERA_TILT_SPEED * delta;
   }
 
-  state.cameraRadius = THREE.MathUtils.clamp(
-    state.cameraRadius,
-    CAMERA_MIN_RADIUS,
-    CAMERA_MAX_RADIUS,
-  );
-  state.camera.position.set(
-    Math.sin(state.cameraAzimuth) * state.cameraRadius,
-    CAMERA_HEIGHT,
-    Math.cos(state.cameraAzimuth) * state.cameraRadius,
-  );
-  state.camera.lookAt(_cameraTarget);
+  state.camera.rotation.set(state.cameraPitch, state.cameraYaw, 0, "YXZ");
+
+  _cameraForward.set(0, 0, -1).applyQuaternion(state.camera.quaternion);
+  _cameraForward.normalize();
+  _cameraRight.set(1, 0, 0).applyQuaternion(state.camera.quaternion);
+  _cameraRight.normalize();
+
+  if (forward) {
+    state.camera.position.addScaledVector(
+      _cameraForward,
+      CAMERA_MOVE_SPEED * delta,
+    );
+  }
+  if (backward) {
+    state.camera.position.addScaledVector(
+      _cameraForward,
+      -CAMERA_MOVE_SPEED * delta,
+    );
+  }
+  if (strafeLeft) {
+    state.camera.position.addScaledVector(
+      _cameraRight,
+      -CAMERA_MOVE_SPEED * delta,
+    );
+  }
+  if (strafeRight) {
+    state.camera.position.addScaledVector(
+      _cameraRight,
+      CAMERA_MOVE_SPEED * delta,
+    );
+  }
 }
 
 function updateRayPan(
@@ -714,6 +958,8 @@ function updateRayPan(
   elapsed: number,
 ): void {
   const panDeg = Math.sin(elapsed * RAY_PAN_SPEED) * RAY_PAN_ANGLE_DEG;
+  const texturePanDeg =
+    Math.sin(elapsed * TEXTURE_RAY_PAN_SPEED) * TEXTURE_RAY_PAN_ANGLE_DEG;
 
   updateRotationConfig(state.pointRayConfig, POINT_RAY_ROTATION_DEG, panDeg);
   updateRotationConfig(
@@ -721,11 +967,19 @@ function updateRayPan(
     WIREFRAME_RAY_ROTATION_DEG,
     panDeg,
   );
+  updateRotationConfig(
+    state.textureRayConfig,
+    TEXTURE_RAY_ROTATION_DEG,
+    texturePanDeg,
+  );
   state.pointDirectionHelper.setDirection(
     directionFromRotation(POINT_RAY_ROTATION_DEG, panDeg),
   );
   state.wireDirectionHelper.setDirection(
     directionFromRotation(WIREFRAME_RAY_ROTATION_DEG, panDeg),
+  );
+  state.textureDirectionHelper.setDirection(
+    directionFromRotation(TEXTURE_RAY_ROTATION_DEG, texturePanDeg),
   );
 }
 
@@ -898,16 +1152,47 @@ export async function setup(
   modelRoot.add(model);
 
   const sourceMeshes = collectSourceMeshes(modelRoot);
+  const textureProjectionMatrix = new THREE.Matrix4();
+  const textureDepthRenderTarget = createTextureDepthRenderTarget();
+  const textureRevealUniforms: TextureRevealUniforms = {
+    uTextureRevealDepthBias: { value: TEXTURE_REVEAL_DEPTH_BIAS },
+    uTextureRevealDepthMap: { value: textureDepthRenderTarget.texture },
+    uTextureRevealProjectionMatrix: { value: textureProjectionMatrix },
+  };
+  const textureDepthCamera = new THREE.PerspectiveCamera(
+    TEXTURE_RAY_FOV_DEG,
+    1,
+    TEXTURE_REVEAL_NEAR,
+    TEXTURE_REVEAL_FAR,
+  );
+  const textureDepthScene = new THREE.Scene();
+  const textureRevealData = createTextureRevealMeshes(
+    sourceMeshes,
+    textureRevealUniforms,
+  );
+  for (const depthMesh of textureRevealData.depthMeshes) {
+    textureDepthScene.add(depthMesh);
+  }
+  for (const revealMesh of textureRevealData.revealMeshes) {
+    ctx.scene.add(revealMesh);
+  }
+
   const pointSamplingConfig = createRotationConfig(
     POINT_RAY_ROTATION_DEG,
     POINT_SAMPLING_FOV_DEG,
   );
-  const pointCloud = samplePointCloud(
-    sourceMeshes,
-    POINT_COUNT,
-    POINT_ORIGIN_POSITION,
-    pointSamplingConfig,
-  );
+  const pointCloud = POINTCLOUD_ENABLED
+    ? samplePointCloud(
+        sourceMeshes,
+        POINT_COUNT,
+        POINT_ORIGIN_POSITION,
+        pointSamplingConfig,
+      )
+    : {
+        colors: new Float32Array(),
+        positions: new Float32Array(),
+        worldPositions: new Float32Array(),
+      };
   const pointVisibilityValues = new Float32Array(
     pointCloud.positions.length / 3,
   );
@@ -929,7 +1214,9 @@ export async function setup(
   const pointMaterial = createPointcloudMaterial();
   const points = new THREE.Points(pointGeometry, pointMaterial);
   points.name = "future-city-pointcloud";
-  ctx.scene.add(points);
+  if (POINTCLOUD_ENABLED) {
+    ctx.scene.add(points);
+  }
 
   const wireframeData = buildWireframeData(sourceMeshes);
   const wireframeVisibilityValues = new Float32Array(
@@ -956,18 +1243,26 @@ export async function setup(
 
   const originMarker = createOriginMarker("#ffcc66", "#553300");
   originMarker.position.copy(POINT_ORIGIN_POSITION);
-  ctx.scene.add(originMarker);
+  if (POINTCLOUD_ENABLED) {
+    ctx.scene.add(originMarker);
+  }
 
   const wireOriginMarker = createOriginMarker("#ff5ad1", "#55103f");
   wireOriginMarker.position.copy(WIREFRAME_ORIGIN_POSITION);
   ctx.scene.add(wireOriginMarker);
+
+  const textureOriginMarker = createOriginMarker("#66ff9a", "#0f4f28");
+  textureOriginMarker.position.copy(TEXTURE_ORIGIN_POSITION);
+  ctx.scene.add(textureOriginMarker);
 
   const pointDirectionHelper = createDirectionHelper(
     POINT_ORIGIN_POSITION,
     POINT_RAY_ROTATION_DEG,
     "#ffcc66",
   );
-  ctx.scene.add(pointDirectionHelper);
+  if (POINTCLOUD_ENABLED) {
+    ctx.scene.add(pointDirectionHelper);
+  }
 
   const wireDirectionHelper = createDirectionHelper(
     WIREFRAME_ORIGIN_POSITION,
@@ -975,6 +1270,13 @@ export async function setup(
     "#ff5ad1",
   );
   ctx.scene.add(wireDirectionHelper);
+
+  const textureDirectionHelper = createDirectionHelper(
+    TEXTURE_ORIGIN_POSITION,
+    TEXTURE_RAY_ROTATION_DEG,
+    "#66ff9a",
+  );
+  ctx.scene.add(textureDirectionHelper);
 
   const originPath = createOriginPath();
   ctx.scene.add(originPath);
@@ -985,22 +1287,33 @@ export async function setup(
 
   const keys = new Set<string>();
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (!event.key.startsWith("Arrow")) return;
+    const key = event.key.toLowerCase();
+    if (!event.key.startsWith("Arrow") && !["w", "a", "s", "d"].includes(key)) {
+      return;
+    }
 
     event.preventDefault();
-    keys.add(event.key);
+    keys.add(event.key.startsWith("Arrow") ? event.key : key);
   };
   const onKeyUp = (event: KeyboardEvent): void => {
-    if (!event.key.startsWith("Arrow")) return;
+    const key = event.key.toLowerCase();
+    if (!event.key.startsWith("Arrow") && !["w", "a", "s", "d"].includes(key)) {
+      return;
+    }
 
     event.preventDefault();
-    keys.delete(event.key);
+    keys.delete(event.key.startsWith("Arrow") ? event.key : key);
   };
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
 
-  ctx.camera.position.set(0, CAMERA_HEIGHT, 14);
-  ctx.camera.lookAt(_cameraTarget);
+  ctx.camera.position.copy(CAMERA_START_POSITION);
+  ctx.camera.rotation.set(
+    THREE.MathUtils.degToRad(CAMERA_START_PITCH_DEG),
+    0,
+    0,
+    "YXZ",
+  );
 
   const pointRayConfig = createRotationConfig(
     POINT_RAY_ROTATION_DEG,
@@ -1010,13 +1323,19 @@ export async function setup(
     WIREFRAME_RAY_ROTATION_DEG,
     WIREFRAME_RAY_FOV_DEG,
   );
+  const textureRayConfig = createRotationConfig(
+    TEXTURE_RAY_ROTATION_DEG,
+    TEXTURE_RAY_FOV_DEG,
+  );
 
   const state: VisioTechnologicaCityTestState = {
     camera: ctx.camera,
+    renderer: ctx.renderer,
     modelRoot,
     sourceMeshes,
     pointRayConfig,
     wireframeRayConfig,
+    textureRayConfig,
     pointGeometry,
     pointMaterial,
     points,
@@ -1027,10 +1346,20 @@ export async function setup(
     wireframe,
     wireframeWorldPositions: wireframeData.worldPositions,
     wireframeVisibilityValues,
+    textureRevealMeshes: textureRevealData.revealMeshes,
+    textureRevealMaterials: textureRevealData.revealMaterials,
+    textureDepthCamera,
+    textureDepthMaterials: textureRevealData.depthMaterials,
+    textureDepthRenderTarget,
+    textureDepthScene,
+    textureProjectionMatrix,
+    textureRevealUniforms,
     originMarker,
     wireOriginMarker,
+    textureOriginMarker,
     pointDirectionHelper,
     wireDirectionHelper,
+    textureDirectionHelper,
     originPath,
     grid,
     raycaster: new THREE.Raycaster(),
@@ -1041,18 +1370,22 @@ export async function setup(
     frame: 0,
     pointVisibilityCursor: 0,
     wireframeVisibilityCursor: 0,
-    cameraAzimuth: 0,
-    cameraRadius: 14,
+    cameraPitch: THREE.MathUtils.degToRad(CAMERA_START_PITCH_DEG),
+    cameraYaw: 0,
   };
   state.raycaster.firstHitOnly = true;
+  updateTextureRevealProjection(state);
+  renderTextureRevealDepth(state);
 
-  for (
-    let i = 0;
-    i <
-    Math.ceil(pointVisibilityValues.length / POINT_VISIBILITY_RAYS_PER_BATCH);
-    i++
-  ) {
-    updatePointVisibilityBatch(state, pointRayConfig);
+  if (POINTCLOUD_ENABLED) {
+    for (
+      let i = 0;
+      i <
+      Math.ceil(pointVisibilityValues.length / POINT_VISIBILITY_RAYS_PER_BATCH);
+      i++
+    ) {
+      updatePointVisibilityBatch(state, pointRayConfig);
+    }
   }
   for (
     let i = 0;
@@ -1065,11 +1398,15 @@ export async function setup(
     updateWireframeVisibilityBatch(state, wireframeRayConfig);
   }
 
-  pointGeometry.getAttribute("aVisibility").needsUpdate = true;
+  if (POINTCLOUD_ENABLED) {
+    pointGeometry.getAttribute("aVisibility").needsUpdate = true;
+  }
   wireframeGeometry.getAttribute("aVisibility").needsUpdate = true;
-  pointMaterial.uniforms.uOrigin.value.copy(
-    originMarker.getWorldPosition(_originWorld),
-  );
+  if (POINTCLOUD_ENABLED) {
+    pointMaterial.uniforms.uOrigin.value.copy(
+      originMarker.getWorldPosition(_originWorld),
+    );
+  }
   wireframeMaterial.uniforms.uOrigin.value.copy(
     wireOriginMarker.getWorldPosition(_originWorld),
   );
@@ -1084,20 +1421,26 @@ export function tick(
   const s = state as VisioTechnologicaCityTestState;
 
   updateRayPan(s, ctx.elapsed);
-  s.pointMaterial.uniforms.uOrigin.value.copy(
-    s.originMarker.getWorldPosition(_originWorld),
-  );
+  updateTextureRevealProjection(s);
+  renderTextureRevealDepth(s);
+  if (POINTCLOUD_ENABLED) {
+    s.pointMaterial.uniforms.uOrigin.value.copy(
+      s.originMarker.getWorldPosition(_originWorld),
+    );
+  }
   s.wireframeMaterial.uniforms.uOrigin.value.copy(
     s.wireOriginMarker.getWorldPosition(_originWorld),
   );
 
   s.frame += 1;
   if (s.frame % VISIBILITY_UPDATE_FRAME_INTERVAL === 0) {
-    updatePointVisibilityBatch(s, s.pointRayConfig);
+    if (POINTCLOUD_ENABLED) {
+      updatePointVisibilityBatch(s, s.pointRayConfig);
+    }
     updateWireframeVisibilityBatch(s, s.wireframeRayConfig);
   }
 
-  updateCameraOrbit(s, ctx.delta);
+  updateCameraFreeMovement(s, ctx.delta);
 
   return { state: s };
 }
@@ -1106,12 +1449,17 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
   const s = state as VisioTechnologicaCityTestState;
 
   scene.remove(s.modelRoot);
+  for (const revealMesh of s.textureRevealMeshes) {
+    scene.remove(revealMesh);
+  }
   scene.remove(s.points);
   scene.remove(s.wireframe);
   scene.remove(s.originMarker);
   scene.remove(s.wireOriginMarker);
+  scene.remove(s.textureOriginMarker);
   scene.remove(s.pointDirectionHelper);
   scene.remove(s.wireDirectionHelper);
+  scene.remove(s.textureDirectionHelper);
   scene.remove(s.originPath);
   scene.remove(s.grid);
 
@@ -1123,6 +1471,13 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
   s.pointMaterial.dispose();
   s.wireframeGeometry.dispose();
   s.wireframeMaterial.dispose();
+  for (const material of s.textureRevealMaterials) {
+    material.dispose();
+  }
+  for (const material of s.textureDepthMaterials) {
+    material.dispose();
+  }
+  s.textureDepthRenderTarget.dispose();
 
   s.originMarker.geometry.dispose();
   if (s.originMarker.material instanceof THREE.Material) {
@@ -1132,8 +1487,13 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
   if (s.wireOriginMarker.material instanceof THREE.Material) {
     s.wireOriginMarker.material.dispose();
   }
+  s.textureOriginMarker.geometry.dispose();
+  if (s.textureOriginMarker.material instanceof THREE.Material) {
+    s.textureOriginMarker.material.dispose();
+  }
   s.pointDirectionHelper.dispose();
   s.wireDirectionHelper.dispose();
+  s.textureDirectionHelper.dispose();
 
   s.originPath.geometry.dispose();
   if (s.originPath.material instanceof THREE.Material) {
