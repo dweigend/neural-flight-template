@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import type { ControllerMessage } from "../types/orientation";
 import { parseMessage, serializeMessage } from "./protocol";
 
 const clients = new Set<WebSocket>();
@@ -26,4 +27,8 @@ function broadcast(data: string, exclude?: WebSocket): void {
 			client.send(data);
 		}
 	}
+}
+
+export function broadcastMessage(msg: ControllerMessage): void {
+	broadcast(serializeMessage(msg));
 }
