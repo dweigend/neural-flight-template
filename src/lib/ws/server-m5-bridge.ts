@@ -1,15 +1,23 @@
-import { M5_BRIDGE } from "../config/flight";
+import { m5BridgeRuntimeConfig } from "../config/flight";
 import type { ControllerMessage, OrientationData } from "../types/orientation";
 import {
 	type M5DeviceMessage,
 	type M5OrientationMessage,
 	parseM5DeviceMessage,
 } from "./m5-protocol";
+import {
+	recordM5BridgeClosed,
+	recordM5BridgeError,
+	recordM5BridgeListening,
+	recordM5DeviceDisconnected,
+	recordM5DeviceMessage,
+} from "./m5-status";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 
 const DEFAULT_M5_BRIDGE_PORT = 8787;
 const DEFAULT_M5_BRIDGE_HOST = "0.0.0.0";
 const DEFAULT_M5_DEVICE_PATH = "/ws/device";
+const MIN_CALIBRATION_AXIS_SPAN = 1;
 
 export interface M5BridgeOptions {
 	port?: number;
@@ -25,8 +33,11 @@ type BroadcastControllerMessage = (message: ControllerMessage) => void;
 
 interface M5ClientState {
 	deviceId?: string;
+	hasSmoothedOrientation: boolean;
 	lowQualityLogged: boolean;
 	neutralSent: boolean;
+	smoothedPitch: number;
+	smoothedRoll: number;
 	staleTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -46,7 +57,9 @@ export function startM5Bridge(
 	const server = new WebSocketServer({ host, path, port });
 
 	server.on("listening", () => {
-		console.info(`[m5-bridge] Listening on ws://${host}:${port}${path}`);
+		const endpoint = `ws://${host}:${port}${path}`;
+		recordM5BridgeListening(endpoint);
+		console.info(`[m5-bridge] Listening on ${endpoint}`);
 	});
 
 	server.on("connection", (socket: WebSocket) => {
@@ -57,11 +70,14 @@ export function startM5Bridge(
 		socket.on("message", (raw: RawData) => {
 			try {
 				const message = parseM5DeviceMessage(rawDataToString(raw));
+				recordM5DeviceMessage(message);
 				const state = rememberDevice(socket, message, clients);
 				latestDeviceId = message.deviceId;
 				handleM5DeviceMessage(message, state, broadcast);
 			} catch (error) {
-				console.warn("[m5-bridge] Invalid frame dropped", getErrorMessage(error));
+				const message = getErrorMessage(error);
+				recordM5BridgeError(message);
+				console.warn("[m5-bridge] Invalid frame dropped", message);
 			}
 		});
 
@@ -69,6 +85,7 @@ export function startM5Bridge(
 			const state = clients.get(socket);
 			if (state?.deviceId) {
 				clearStaleTimer(state);
+				recordM5DeviceDisconnected(state.deviceId);
 				console.info(`[m5-bridge] Device disconnected: ${state.deviceId}`);
 				broadcastNeutralOrientation(state, broadcast, "disconnected");
 			}
@@ -78,12 +95,14 @@ export function startM5Bridge(
 		});
 
 		socket.on("error", (error: Error) => {
+			recordM5BridgeError(error.message);
 			console.warn("[m5-bridge] Device socket error", error.message);
 		});
 	});
 
 	server.on("error", (error: Error) => {
 		if (!closed) {
+			recordM5BridgeError(error.message);
 			console.warn("[m5-bridge] Server error", error.message);
 		}
 	});
@@ -96,6 +115,7 @@ export function startM5Bridge(
 			}
 			activeStates.clear();
 			server.close();
+			recordM5BridgeClosed();
 			if (latestDeviceId) {
 				console.info(`[m5-bridge] Closed; latest device was ${latestDeviceId}`);
 			}
@@ -116,32 +136,112 @@ function handleM5DeviceMessage(
 	}
 
 	if (message.type !== "orientation") return;
-	if (message.quality < M5_BRIDGE.QUALITY_THRESHOLD) {
+	if (message.quality < m5BridgeRuntimeConfig.qualityThreshold) {
 		logLowQualityDrop(message, state);
 		return;
 	}
 
-	broadcast(mapM5OrientationToControllerMessage(message));
+	broadcast(mapM5OrientationToControllerMessage(message, state));
 	scheduleStaleNeutral(message, state, broadcast);
 }
 
 function mapM5OrientationToControllerMessage(
 	message: M5OrientationMessage,
+	state: M5ClientState,
 ): OrientationData {
+	const mappedPitch =
+		(mapM5Pitch(message.pitch) * m5BridgeRuntimeConfig.pitchScale) *
+		(m5BridgeRuntimeConfig.invertPitch ? -1 : 1);
+	const mappedRoll =
+		(mapM5Roll(message.roll) * m5BridgeRuntimeConfig.rollScale) *
+		(m5BridgeRuntimeConfig.invertRoll ? -1 : 1);
+	const targetPitch = applyDeadzoneAndClamp(
+		mappedPitch,
+		-m5BridgeRuntimeConfig.maxPitch,
+		m5BridgeRuntimeConfig.maxPitch,
+	);
+	const targetRoll = applyDeadzoneAndClamp(
+		mappedRoll,
+		-m5BridgeRuntimeConfig.maxRoll,
+		m5BridgeRuntimeConfig.maxRoll,
+	);
+	const pitch = smoothValue(
+		state.smoothedPitch,
+		targetPitch,
+		m5BridgeRuntimeConfig.smoothingAlpha,
+		state.hasSmoothedOrientation,
+	);
+	const roll = smoothValue(
+		state.smoothedRoll,
+		targetRoll,
+		m5BridgeRuntimeConfig.smoothingAlpha,
+		state.hasSmoothedOrientation,
+	);
+
+	state.hasSmoothedOrientation = true;
+	state.smoothedPitch = pitch;
+	state.smoothedRoll = roll;
+
 	return {
 		type: "orientation",
-		pitch: applyDeadzoneAndClamp(
-			message.pitch,
-			M5_BRIDGE.PITCH_RANGE[0],
-			M5_BRIDGE.PITCH_RANGE[1],
-		),
-		roll: applyDeadzoneAndClamp(
-			message.roll,
-			M5_BRIDGE.ROLL_RANGE[0],
-			M5_BRIDGE.ROLL_RANGE[1],
-		),
+		pitch,
+		roll,
 		timestamp: Date.now(),
 	};
+}
+
+function mapM5Pitch(rawPitch: number): number {
+	if (!m5BridgeRuntimeConfig.calibrationEnabled) return rawPitch;
+
+	return mapCalibratedAxis({
+		rawValue: rawPitch,
+		neutralValue: m5BridgeRuntimeConfig.calibrationNeutralPitch,
+		positiveRawValue: m5BridgeRuntimeConfig.calibrationDownPitch,
+		negativeRawValue: m5BridgeRuntimeConfig.calibrationUpPitch,
+		positiveOutputValue: m5BridgeRuntimeConfig.maxPitch,
+		negativeOutputValue: -m5BridgeRuntimeConfig.maxPitch,
+	});
+}
+
+function mapM5Roll(rawRoll: number): number {
+	if (!m5BridgeRuntimeConfig.calibrationEnabled) return rawRoll;
+
+	return mapCalibratedAxis({
+		rawValue: rawRoll,
+		neutralValue: m5BridgeRuntimeConfig.calibrationNeutralRoll,
+		positiveRawValue: m5BridgeRuntimeConfig.calibrationRightRoll,
+		negativeRawValue: m5BridgeRuntimeConfig.calibrationLeftRoll,
+		positiveOutputValue: m5BridgeRuntimeConfig.maxRoll,
+		negativeOutputValue: -m5BridgeRuntimeConfig.maxRoll,
+	});
+}
+
+interface CalibratedAxisInput {
+	rawValue: number;
+	neutralValue: number;
+	positiveRawValue: number;
+	negativeRawValue: number;
+	positiveOutputValue: number;
+	negativeOutputValue: number;
+}
+
+function mapCalibratedAxis(input: CalibratedAxisInput): number {
+	const positiveDelta = input.positiveRawValue - input.neutralValue;
+	const negativeDelta = input.negativeRawValue - input.neutralValue;
+	const rawDelta = input.rawValue - input.neutralValue;
+
+	if (
+		Math.abs(positiveDelta) < MIN_CALIBRATION_AXIS_SPAN ||
+		Math.abs(negativeDelta) < MIN_CALIBRATION_AXIS_SPAN
+	) {
+		return rawDelta;
+	}
+
+	if (rawDelta * positiveDelta >= 0) {
+		return (rawDelta / positiveDelta) * input.positiveOutputValue;
+	}
+
+	return (rawDelta / negativeDelta) * input.negativeOutputValue;
 }
 
 function rememberDevice(
@@ -161,8 +261,11 @@ function rememberDevice(
 
 function createClientState(): M5ClientState {
 	return {
+		hasSmoothedOrientation: false,
 		lowQualityLogged: false,
 		neutralSent: true,
+		smoothedPitch: 0,
+		smoothedRoll: 0,
 		staleTimer: null,
 	};
 }
@@ -172,8 +275,18 @@ function applyDeadzoneAndClamp(
 	minimum: number,
 	maximum: number,
 ): number {
-	if (Math.abs(value) < M5_BRIDGE.DEADZONE_DEGREES) return 0;
+	if (Math.abs(value) < m5BridgeRuntimeConfig.deadzoneDegrees) return 0;
 	return Math.max(minimum, Math.min(maximum, value));
+}
+
+function smoothValue(
+	previous: number,
+	next: number,
+	alpha: number,
+	hasPrevious: boolean,
+): number {
+	if (!hasPrevious) return next;
+	return previous + (next - previous) * alpha;
 }
 
 function scheduleStaleNeutral(
@@ -186,7 +299,7 @@ function scheduleStaleNeutral(
 	state.staleTimer = setTimeout(() => {
 		console.info(`[m5-bridge] Device stale: ${message.deviceId}; neutralizing`);
 		broadcastNeutralOrientation(state, broadcast, "stale");
-	}, M5_BRIDGE.STALE_TIMEOUT_MS);
+	}, m5BridgeRuntimeConfig.staleTimeoutMs);
 }
 
 function clearStaleTimer(state: M5ClientState): void {
@@ -202,6 +315,9 @@ function broadcastNeutralOrientation(
 ): void {
 	if (state.neutralSent) return;
 	state.neutralSent = true;
+	state.hasSmoothedOrientation = false;
+	state.smoothedPitch = 0;
+	state.smoothedRoll = 0;
 	state.staleTimer = null;
 	broadcast({
 		type: "orientation",

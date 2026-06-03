@@ -1,5 +1,6 @@
 import type {
 	ControllerMessage,
+	M5BridgeSettingsUpdate,
 	OrientationData,
 	SettingsUpdate,
 	SpeedCommand,
@@ -37,6 +38,7 @@ export function parseMessage(raw: string): ControllerMessage {
 	if (isOrientationData(data)) return data;
 	if (isSpeedCommand(data)) return data;
 	if (isSettingsUpdate(data)) return data;
+	if (isM5BridgeSettingsUpdate(data)) return data;
 
 	throw new Error(
 		`Invalid message: unknown type "${(data as Record<string, unknown>).type}"`,
@@ -73,5 +75,24 @@ export function isSettingsUpdate(data: unknown): data is SettingsUpdate {
 		typeof d.settings === "object" &&
 		d.settings !== null &&
 		typeof d.timestamp === "number"
+	);
+}
+
+export function isM5BridgeSettingsUpdate(
+	data: unknown,
+): data is M5BridgeSettingsUpdate {
+	if (typeof data !== "object" || data === null) return false;
+	const d = data as Record<string, unknown>;
+	if (
+		d.type !== "m5-settings" ||
+		typeof d.settings !== "object" ||
+		d.settings === null ||
+		typeof d.timestamp !== "number"
+	) {
+		return false;
+	}
+
+	return Object.values(d.settings).every(
+		(value) => typeof value === "number" || typeof value === "boolean",
 	);
 }

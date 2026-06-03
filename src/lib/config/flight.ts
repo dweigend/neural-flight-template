@@ -33,10 +33,162 @@ export const CONTROLS = {
 export const M5_BRIDGE = {
 	QUALITY_THRESHOLD: 0.5,
 	DEADZONE_DEGREES: 1.5,
+	SMOOTHING_ALPHA: 1,
+	PITCH_SCALE: 1,
+	ROLL_SCALE: 1,
+	INVERT_PITCH: false,
+	INVERT_ROLL: false,
 	PITCH_RANGE: CONTROLS.PITCH_RANGE,
 	ROLL_RANGE: CONTROLS.ROLL_RANGE,
 	STALE_TIMEOUT_MS: 3000,
 } as const;
+
+export interface M5BridgeRuntimeConfig {
+	qualityThreshold: number;
+	deadzoneDegrees: number;
+	smoothingAlpha: number;
+	pitchScale: number;
+	rollScale: number;
+	invertPitch: boolean;
+	invertRoll: boolean;
+	maxPitch: number;
+	maxRoll: number;
+	staleTimeoutMs: number;
+	calibrationEnabled: boolean;
+	calibrationNeutralPitch: number;
+	calibrationNeutralRoll: number;
+	calibrationUpPitch: number;
+	calibrationDownPitch: number;
+	calibrationRightRoll: number;
+	calibrationLeftRoll: number;
+}
+
+function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
+	return {
+		qualityThreshold: M5_BRIDGE.QUALITY_THRESHOLD,
+		deadzoneDegrees: M5_BRIDGE.DEADZONE_DEGREES,
+		smoothingAlpha: M5_BRIDGE.SMOOTHING_ALPHA,
+		pitchScale: M5_BRIDGE.PITCH_SCALE,
+		rollScale: M5_BRIDGE.ROLL_SCALE,
+		invertPitch: M5_BRIDGE.INVERT_PITCH,
+		invertRoll: M5_BRIDGE.INVERT_ROLL,
+		maxPitch: M5_BRIDGE.PITCH_RANGE[1],
+		maxRoll: M5_BRIDGE.ROLL_RANGE[1],
+		staleTimeoutMs: M5_BRIDGE.STALE_TIMEOUT_MS,
+		calibrationEnabled: false,
+		calibrationNeutralPitch: 0,
+		calibrationNeutralRoll: 0,
+		calibrationUpPitch: 0,
+		calibrationDownPitch: 0,
+		calibrationRightRoll: 0,
+		calibrationLeftRoll: 0,
+	};
+}
+
+export let m5BridgeRuntimeConfig: M5BridgeRuntimeConfig =
+	createM5BridgeDefaults();
+
+export function applyM5BridgeSettings(
+	settings: Record<string, number | boolean>,
+): void {
+	for (const [key, value] of Object.entries(settings)) {
+		switch (key) {
+			case "qualityThreshold":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.qualityThreshold = clamp(value, 0, 1);
+				}
+				break;
+			case "deadzoneDegrees":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.deadzoneDegrees = clamp(value, 0, 15);
+				}
+				break;
+			case "smoothingAlpha":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.smoothingAlpha = clamp(value, 0.05, 1);
+				}
+				break;
+			case "pitchScale":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.pitchScale = clamp(value, 0.1, 3);
+				}
+				break;
+			case "rollScale":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.rollScale = clamp(value, 0.1, 3);
+				}
+				break;
+			case "invertPitch":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.invertPitch = value;
+				}
+				break;
+			case "invertRoll":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.invertRoll = value;
+				}
+				break;
+			case "maxPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.maxPitch = clamp(value, 5, 90);
+				}
+				break;
+			case "maxRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.maxRoll = clamp(value, 5, 90);
+				}
+				break;
+			case "staleTimeoutMs":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.staleTimeoutMs = clamp(value, 500, 10_000);
+				}
+				break;
+			case "calibrationEnabled":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.calibrationEnabled = value;
+				}
+				break;
+			case "calibrationNeutralPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationNeutralPitch = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationNeutralRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationNeutralRoll = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationUpPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationUpPitch = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationDownPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationDownPitch = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationRightRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationRightRoll = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationLeftRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationLeftRoll = clamp(value, -180, 180);
+				}
+				break;
+		}
+	}
+}
+
+export function resetM5BridgeSettings(): void {
+	m5BridgeRuntimeConfig = createM5BridgeDefaults();
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+	return Math.max(minimum, Math.min(maximum, value));
+}
 
 // ── Rings (per chunk) ──
 export const RINGS = {
