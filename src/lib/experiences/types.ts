@@ -185,6 +185,8 @@ export interface ExperienceManifest {
 	) => {
 		state: ExperienceState;
 		outputs?: Record<string, SignalValue | ColorValue>;
+		/** If provided, called instead of renderer.render() for custom post-processing */
+		render?: (delta: number) => void;
 	};
 
 	/** Called when a parameter changes. Map parameter ID to scene changes. */

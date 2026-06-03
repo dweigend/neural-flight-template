@@ -104,7 +104,11 @@ onMount(() => {
 					score = result.outputs.score as number;
 				}
 
-				renderer.render(scene, renderCamera);
+				if (result.render) {
+					result.render(delta);
+				} else {
+					renderer.render(scene, renderCamera);
+				}
 			});
 		},
 	);

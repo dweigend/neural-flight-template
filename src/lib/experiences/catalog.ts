@@ -1,3 +1,5 @@
+import { manifest as b1Lesser } from "./b1-lesser";
+import { manifest as b2Lesser } from "./b2-lesser";
 import { manifest as cloudTowers } from "./cloud-towers";
 import { manifest as gradientPrism } from "./gradient-prism";
 import { manifest as mountainFlight } from "./mountain-flight";
@@ -13,6 +15,8 @@ import type { ExperienceManifest } from "./types";
 // The ID must match the folder name and the manifest.id field.
 
 const CATALOG: Record<string, ExperienceManifest> = {
+	"b1-lesser": b1Lesser,
+	"b2-lesser": b2Lesser,
 	"cloud-towers": cloudTowers,
 	"gradient-prism": gradientPrism,
 	"mountain-flight": mountainFlight,
