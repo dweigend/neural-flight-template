@@ -32,9 +32,12 @@ export interface M5BridgeStatus {
 	updatedAt: number;
 }
 
-let status: M5BridgeStatus = createInitialStatus();
+interface M5StatusGlobal {
+	__neuralFlightM5BridgeStatus?: M5BridgeStatus;
+}
 
 export function getM5BridgeStatus(): M5BridgeStatus {
+	const status = readStatus();
 	return {
 		...status,
 		capabilities: [...status.capabilities],
@@ -43,28 +46,31 @@ export function getM5BridgeStatus(): M5BridgeStatus {
 }
 
 export function recordM5BridgeListening(endpoint: string): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		bridgeListening: true,
 		endpoint,
 		lastEvent: "Bridge listening",
 		updatedAt: Date.now(),
-	};
+	});
 }
 
 export function recordM5BridgeClosed(): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		bridgeListening: false,
 		connected: false,
 		lastEvent: "Bridge closed",
 		updatedAt: Date.now(),
-	};
+	});
 }
 
 export function recordM5DeviceMessage(message: M5DeviceMessage): void {
 	const now = Date.now();
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		connected: true,
 		deviceId: message.deviceId,
@@ -72,7 +78,7 @@ export function recordM5DeviceMessage(message: M5DeviceMessage): void {
 		lastError: null,
 		lastEvent: `${message.type} received`,
 		updatedAt: now,
-	};
+	});
 
 	if (message.type === "register") {
 		recordRegisterMessage(message, now);
@@ -90,21 +96,23 @@ export function recordM5DeviceMessage(message: M5DeviceMessage): void {
 }
 
 export function recordM5DeviceDisconnected(deviceId: string): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		connected: false,
 		lastEvent: `Device disconnected: ${deviceId}`,
 		updatedAt: Date.now(),
-	};
+	});
 }
 
 export function recordM5BridgeError(error: string): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		lastError: error,
 		lastEvent: "Bridge error",
 		updatedAt: Date.now(),
-	};
+	});
 }
 
 function createInitialStatus(): M5BridgeStatus {
@@ -132,17 +140,19 @@ function createInitialStatus(): M5BridgeStatus {
 }
 
 function recordRegisterMessage(message: M5RegisterMessage, now: number): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		firmwareVersion: message.firmwareVersion,
 		capabilities: [...message.capabilities],
 		lastEvent: `Device registered: ${message.deviceId}`,
 		updatedAt: now,
-	};
+	});
 }
 
 function recordHeartbeatMessage(message: M5HeartbeatMessage, now: number): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		lastHeartbeatAt: now,
 		rssi: message.rssi,
@@ -152,14 +162,15 @@ function recordHeartbeatMessage(message: M5HeartbeatMessage, now: number): void 
 		calibrated: message.calibrated,
 		streaming: message.streaming,
 		updatedAt: now,
-	};
+	});
 }
 
 function recordOrientationMessage(
 	message: M5OrientationMessage,
 	now: number,
 ): void {
-	status = {
+	const status = readStatus();
+	writeStatus({
 		...status,
 		lastOrientationAt: now,
 		orientation: {
@@ -169,5 +180,16 @@ function recordOrientationMessage(
 			quality: message.quality,
 		},
 		updatedAt: now,
-	};
+	});
+}
+
+function readStatus(): M5BridgeStatus {
+	const store = globalThis as typeof globalThis & M5StatusGlobal;
+	store.__neuralFlightM5BridgeStatus ??= createInitialStatus();
+	return store.__neuralFlightM5BridgeStatus;
+}
+
+function writeStatus(nextStatus: M5BridgeStatus): void {
+	const store = globalThis as typeof globalThis & M5StatusGlobal;
+	store.__neuralFlightM5BridgeStatus = nextStatus;
 }

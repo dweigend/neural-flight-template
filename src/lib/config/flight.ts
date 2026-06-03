@@ -61,6 +61,8 @@ export interface M5BridgeRuntimeConfig {
 	calibrationDownPitch: number;
 	calibrationRightRoll: number;
 	calibrationLeftRoll: number;
+	calibrationPitchUsesRoll: boolean;
+	calibrationRollUsesPitch: boolean;
 }
 
 function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
@@ -82,6 +84,8 @@ function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
 		calibrationDownPitch: 0,
 		calibrationRightRoll: 0,
 		calibrationLeftRoll: 0,
+		calibrationPitchUsesRoll: false,
+		calibrationRollUsesPitch: false,
 	};
 }
 
@@ -176,6 +180,16 @@ export function applyM5BridgeSettings(
 			case "calibrationLeftRoll":
 				if (typeof value === "number") {
 					m5BridgeRuntimeConfig.calibrationLeftRoll = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationPitchUsesRoll":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.calibrationPitchUsesRoll = value;
+				}
+				break;
+			case "calibrationRollUsesPitch":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.calibrationRollUsesPitch = value;
 				}
 				break;
 		}

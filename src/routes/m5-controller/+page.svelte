@@ -90,6 +90,7 @@ interface NavigatorWithSerial extends Navigator {
 type ConfigureStatus = "idle" | "busy" | "success" | "error";
 type CalibrationStepId = "neutral" | "up" | "down" | "right" | "left";
 type CalibrationStatus = "idle" | "running" | "complete" | "error";
+type CalibrationAxis = "pitch" | "roll";
 
 interface CalibrationStep {
 	id: CalibrationStepId;
@@ -109,6 +110,8 @@ interface CalibrationValues {
 	downPitch: number;
 	rightRoll: number;
 	leftRoll: number;
+	pitchAxis: CalibrationAxis;
+	rollAxis: CalibrationAxis;
 }
 
 const M5_SERIAL_PORT_FILTERS: SerialPortFilterLike[] = [
@@ -170,6 +173,8 @@ const defaults: M5BridgeRuntimeConfig = {
 	calibrationDownPitch: 0,
 	calibrationRightRoll: 0,
 	calibrationLeftRoll: 0,
+	calibrationPitchUsesRoll: false,
+	calibrationRollUsesPitch: false,
 };
 
 const motionControls: NumberControl[] = [
@@ -360,8 +365,9 @@ async function refreshStatus(): Promise<M5BridgeStatus | null> {
 	}
 }
 
-function startCalibration(): void {
-	if (!bridgeStatus?.connected) {
+async function startCalibration(): Promise<void> {
+	const status = await refreshStatus();
+	if (!status?.connected) {
 		calibrationStatus = "error";
 		calibrationMessage = "Connect the M5Stick before starting calibration.";
 		return;
@@ -471,6 +477,8 @@ function finishCalibration(): void {
 		calibrationDownPitch: values.downPitch,
 		calibrationRightRoll: values.rightRoll,
 		calibrationLeftRoll: values.leftRoll,
+		calibrationPitchUsesRoll: values.pitchAxis === "roll",
+		calibrationRollUsesPitch: values.rollAxis === "pitch",
 	};
 	sendSettings({
 		calibrationEnabled: true,
@@ -480,16 +488,22 @@ function finishCalibration(): void {
 		calibrationDownPitch: values.downPitch,
 		calibrationRightRoll: values.rightRoll,
 		calibrationLeftRoll: values.leftRoll,
+		calibrationPitchUsesRoll: values.pitchAxis === "roll",
+		calibrationRollUsesPitch: values.rollAxis === "pitch",
 	});
 }
 
 function buildCalibrationValues(
 	neutral: CalibrationSample,
 ): CalibrationValues | null {
-	const upPitch = extremeAxisValue("up", "pitch", neutral.pitch);
-	const downPitch = extremeAxisValue("down", "pitch", neutral.pitch);
-	const rightRoll = extremeAxisValue("right", "roll", neutral.roll);
-	const leftRoll = extremeAxisValue("left", "roll", neutral.roll);
+	const pitchAxis = chooseDominantAxis("down", "up", neutral);
+	const rollAxis = chooseDominantAxis("right", "left", neutral);
+	const pitchNeutral = neutral[pitchAxis];
+	const rollNeutral = neutral[rollAxis];
+	const upPitch = extremeAxisValue("up", pitchAxis, pitchNeutral);
+	const downPitch = extremeAxisValue("down", pitchAxis, pitchNeutral);
+	const rightRoll = extremeAxisValue("right", rollAxis, rollNeutral);
+	const leftRoll = extremeAxisValue("left", rollAxis, rollNeutral);
 
 	if (
 		upPitch === null ||
@@ -501,18 +515,46 @@ function buildCalibrationValues(
 	}
 
 	return {
-		neutralPitch: neutral.pitch,
-		neutralRoll: neutral.roll,
+		neutralPitch: pitchNeutral,
+		neutralRoll: rollNeutral,
 		upPitch,
 		downPitch,
 		rightRoll,
 		leftRoll,
+		pitchAxis,
+		rollAxis,
 	};
+}
+
+function chooseDominantAxis(
+	positiveStepId: CalibrationStepId,
+	negativeStepId: CalibrationStepId,
+	neutral: CalibrationSample,
+): CalibrationAxis {
+	const pitchMotion = Math.max(
+		axisMotion(positiveStepId, "pitch", neutral.pitch),
+		axisMotion(negativeStepId, "pitch", neutral.pitch),
+	);
+	const rollMotion = Math.max(
+		axisMotion(positiveStepId, "roll", neutral.roll),
+		axisMotion(negativeStepId, "roll", neutral.roll),
+	);
+
+	return rollMotion > pitchMotion ? "roll" : "pitch";
+}
+
+function axisMotion(
+	stepId: CalibrationStepId,
+	axis: CalibrationAxis,
+	neutralValue: number,
+): number {
+	const extremeValue = extremeAxisValue(stepId, axis, neutralValue);
+	return extremeValue === null ? 0 : Math.abs(extremeValue - neutralValue);
 }
 
 function extremeAxisValue(
 	stepId: CalibrationStepId,
-	axis: keyof CalibrationSample,
+	axis: CalibrationAxis,
 	neutralValue: number,
 ): number | null {
 	const samples = calibrationSamples.get(stepId) ?? [];
@@ -798,6 +840,9 @@ onDestroy(() => {
 					<CheckCircle size={24} />
 					<div>
 						<strong>{calibrationMessage}</strong>
+						<span>
+							Pitch axis {calibrationValues.pitchAxis} · Roll axis {calibrationValues.rollAxis}
+						</span>
 						<span>
 							N {calibrationValues.neutralPitch.toFixed(1)}/{calibrationValues.neutralRoll.toFixed(1)}
 							· U {calibrationValues.upPitch.toFixed(1)} · D {calibrationValues.downPitch.toFixed(1)}

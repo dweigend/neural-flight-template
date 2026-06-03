@@ -150,10 +150,11 @@ function mapM5OrientationToControllerMessage(
 	state: M5ClientState,
 ): OrientationData {
 	const mappedPitch =
-		(mapM5Pitch(message.pitch) * m5BridgeRuntimeConfig.pitchScale) *
+		(mapM5Pitch(message.pitch, message.roll) *
+			m5BridgeRuntimeConfig.pitchScale) *
 		(m5BridgeRuntimeConfig.invertPitch ? -1 : 1);
 	const mappedRoll =
-		(mapM5Roll(message.roll) * m5BridgeRuntimeConfig.rollScale) *
+		(mapM5Roll(message.pitch, message.roll) * m5BridgeRuntimeConfig.rollScale) *
 		(m5BridgeRuntimeConfig.invertRoll ? -1 : 1);
 	const targetPitch = applyDeadzoneAndClamp(
 		mappedPitch,
@@ -190,11 +191,14 @@ function mapM5OrientationToControllerMessage(
 	};
 }
 
-function mapM5Pitch(rawPitch: number): number {
+function mapM5Pitch(rawPitch: number, rawRoll: number): number {
 	if (!m5BridgeRuntimeConfig.calibrationEnabled) return rawPitch;
+	const rawValue = m5BridgeRuntimeConfig.calibrationPitchUsesRoll
+		? rawRoll
+		: rawPitch;
 
 	return mapCalibratedAxis({
-		rawValue: rawPitch,
+		rawValue,
 		neutralValue: m5BridgeRuntimeConfig.calibrationNeutralPitch,
 		positiveRawValue: m5BridgeRuntimeConfig.calibrationDownPitch,
 		negativeRawValue: m5BridgeRuntimeConfig.calibrationUpPitch,
@@ -203,11 +207,14 @@ function mapM5Pitch(rawPitch: number): number {
 	});
 }
 
-function mapM5Roll(rawRoll: number): number {
+function mapM5Roll(rawPitch: number, rawRoll: number): number {
 	if (!m5BridgeRuntimeConfig.calibrationEnabled) return rawRoll;
+	const rawValue = m5BridgeRuntimeConfig.calibrationRollUsesPitch
+		? rawPitch
+		: rawRoll;
 
 	return mapCalibratedAxis({
-		rawValue: rawRoll,
+		rawValue,
 		neutralValue: m5BridgeRuntimeConfig.calibrationNeutralRoll,
 		positiveRawValue: m5BridgeRuntimeConfig.calibrationRightRoll,
 		negativeRawValue: m5BridgeRuntimeConfig.calibrationLeftRoll,
