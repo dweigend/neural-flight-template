@@ -30,6 +30,14 @@ export const CONTROLS = {
 	},
 } as const;
 
+export const M5_BRIDGE = {
+	QUALITY_THRESHOLD: 0.5,
+	DEADZONE_DEGREES: 1.5,
+	PITCH_RANGE: CONTROLS.PITCH_RANGE,
+	ROLL_RANGE: CONTROLS.ROLL_RANGE,
+	STALE_TIMEOUT_MS: 3000,
+} as const;
+
 // ── Rings (per chunk) ──
 export const RINGS = {
 	PER_CHUNK: 2,

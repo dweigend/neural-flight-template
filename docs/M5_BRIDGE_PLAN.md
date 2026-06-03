@@ -342,6 +342,8 @@ Do not make code changes unless you find a bug. If you find a bug, patch only th
 
 ## Milestone 5: Hardware Test And Axis Calibration
 
+> Manual real-world step: this milestone requires the physical M5Stick and ICAROS hardware. Stop coding before the motion test, start the simulator, connect the M5Stick, then physically tilt/roll the mounted sensor while watching the VR scene or logs.
+
 ### Work
 
 Configure the M5Stick to connect to the simulator host:
@@ -364,14 +366,27 @@ If using a different interface, inspect:
 ifconfig
 ```
 
-Then test physical motion:
+Then test physical motion. Do this slowly at first and return to neutral between each movement:
 
-- Tilt ICAROS forward.
-- Tilt ICAROS backward.
-- Roll left.
-- Roll right.
+| Manual action | What to observe |
+| --- | --- |
+| Hold the ICAROS/sensor in its neutral resting position for 3-5 seconds. | Pitch and roll should stay close to `0`. If not, calibrate the M5Stick before changing code. |
+| Tilt ICAROS forward and hold for 2-3 seconds. | The simulator should react consistently in the expected forward-lean direction. Record whether pitch needs inversion. |
+| Return to neutral for 2-3 seconds. | The simulator should stop changing direction once the sensor is neutral. |
+| Tilt ICAROS backward and hold for 2-3 seconds. | The simulator should react opposite to the forward test. |
+| Return to neutral for 2-3 seconds. | Pitch and roll should settle close to `0`. |
+| Roll ICAROS left and hold for 2-3 seconds. | The simulator should bank/turn left. Record whether roll needs inversion. |
+| Return to neutral for 2-3 seconds. | The simulator should stop banking. |
+| Roll ICAROS right and hold for 2-3 seconds. | The simulator should bank/turn right. |
 
-Record whether each direction matches the simulator.
+Record whether each direction matches the simulator before asking a coding agent to change mapping code. The useful notes are:
+
+- forward works or forward is reversed
+- backward works or backward is reversed
+- left works or left is reversed
+- right works or right is reversed
+- neutral is stable or neutral drifts
+- approximate resting pitch/roll values from logs, if visible
 
 ### Mapping Adjustments
 
@@ -508,7 +523,7 @@ Manual checks:
 - M5 bridge listens on `ws://0.0.0.0:8787/ws/device` or equivalent configured host.
 - `M5_BRIDGE=0 bun run dev` disables the bridge.
 - Simulated M5 frames control `/vr`.
-- Hardware M5 frames control `/vr`.
+- Hardware M5 frames control `/vr`. Manual real-world step: physically move the mounted M5Stick/ICAROS through neutral, forward, backward, left, and right positions and confirm the scene responds correctly.
 - Existing `/controller` route still controls `/vr`.
 - Existing `/gyro` route still controls `/vr`.
 - Quest can enter WebXR over HTTPS.
@@ -551,4 +566,3 @@ Report:
 ```
 
 Avoid asking an agent to "wire up the M5 bridge" as one large task. Split it by protocol, bridge, Vite wiring, simulated test, hardware mapping, and robustness.
-

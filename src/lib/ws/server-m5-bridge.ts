@@ -1,3 +1,4 @@
+import { M5_BRIDGE } from "../config/flight";
 import type { ControllerMessage, OrientationData } from "../types/orientation";
 import {
 	type M5DeviceMessage,
@@ -22,6 +23,13 @@ export interface M5Bridge {
 
 type BroadcastControllerMessage = (message: ControllerMessage) => void;
 
+interface M5ClientState {
+	deviceId?: string;
+	lowQualityLogged: boolean;
+	neutralSent: boolean;
+	staleTimer: ReturnType<typeof setTimeout> | null;
+}
+
 export function startM5Bridge(
 	broadcast: BroadcastControllerMessage,
 	options: M5BridgeOptions = {},
@@ -29,7 +37,8 @@ export function startM5Bridge(
 	const port = options.port ?? DEFAULT_M5_BRIDGE_PORT;
 	const host = options.host ?? DEFAULT_M5_BRIDGE_HOST;
 	const path = options.path ?? DEFAULT_M5_DEVICE_PATH;
-	const clients = new WeakMap<WebSocket, string>();
+	const clients = new WeakMap<WebSocket, M5ClientState>();
+	const activeStates = new Set<M5ClientState>();
 
 	let latestDeviceId: string | null = null;
 	let closed = false;
@@ -41,21 +50,30 @@ export function startM5Bridge(
 	});
 
 	server.on("connection", (socket: WebSocket) => {
+		const state = createClientState();
+		clients.set(socket, state);
+		activeStates.add(state);
+
 		socket.on("message", (raw: RawData) => {
 			try {
 				const message = parseM5DeviceMessage(rawDataToString(raw));
-				rememberDevice(socket, message, clients);
+				const state = rememberDevice(socket, message, clients);
 				latestDeviceId = message.deviceId;
-				handleM5DeviceMessage(message, broadcast);
+				handleM5DeviceMessage(message, state, broadcast);
 			} catch (error) {
 				console.warn("[m5-bridge] Invalid frame dropped", getErrorMessage(error));
 			}
 		});
 
 		socket.on("close", () => {
-			const deviceId = clients.get(socket);
-			if (deviceId) {
-				console.info(`[m5-bridge] Device disconnected: ${deviceId}`);
+			const state = clients.get(socket);
+			if (state?.deviceId) {
+				clearStaleTimer(state);
+				console.info(`[m5-bridge] Device disconnected: ${state.deviceId}`);
+				broadcastNeutralOrientation(state, broadcast, "disconnected");
+			}
+			if (state) {
+				activeStates.delete(state);
 			}
 		});
 
@@ -73,6 +91,10 @@ export function startM5Bridge(
 	return {
 		close: () => {
 			closed = true;
+			for (const state of activeStates) {
+				clearStaleTimer(state);
+			}
+			activeStates.clear();
 			server.close();
 			if (latestDeviceId) {
 				console.info(`[m5-bridge] Closed; latest device was ${latestDeviceId}`);
@@ -83,6 +105,7 @@ export function startM5Bridge(
 
 function handleM5DeviceMessage(
 	message: M5DeviceMessage,
+	state: M5ClientState,
 	broadcast: BroadcastControllerMessage,
 ): void {
 	if (message.type === "register") {
@@ -93,8 +116,13 @@ function handleM5DeviceMessage(
 	}
 
 	if (message.type !== "orientation") return;
+	if (message.quality < M5_BRIDGE.QUALITY_THRESHOLD) {
+		logLowQualityDrop(message, state);
+		return;
+	}
 
 	broadcast(mapM5OrientationToControllerMessage(message));
+	scheduleStaleNeutral(message, state, broadcast);
 }
 
 function mapM5OrientationToControllerMessage(
@@ -102,8 +130,16 @@ function mapM5OrientationToControllerMessage(
 ): OrientationData {
 	return {
 		type: "orientation",
-		pitch: message.pitch,
-		roll: message.roll,
+		pitch: applyDeadzoneAndClamp(
+			message.pitch,
+			M5_BRIDGE.PITCH_RANGE[0],
+			M5_BRIDGE.PITCH_RANGE[1],
+		),
+		roll: applyDeadzoneAndClamp(
+			message.roll,
+			M5_BRIDGE.ROLL_RANGE[0],
+			M5_BRIDGE.ROLL_RANGE[1],
+		),
 		timestamp: Date.now(),
 	};
 }
@@ -111,12 +147,80 @@ function mapM5OrientationToControllerMessage(
 function rememberDevice(
 	socket: WebSocket,
 	message: M5DeviceMessage,
-	clients: WeakMap<WebSocket, string>,
-): void {
-	const previousDeviceId = clients.get(socket);
-	if (previousDeviceId === message.deviceId) return;
+	clients: WeakMap<WebSocket, M5ClientState>,
+): M5ClientState {
+	const state = clients.get(socket) ?? createClientState();
+	const previousDeviceId = state.deviceId;
+	if (previousDeviceId === message.deviceId) return state;
 
-	clients.set(socket, message.deviceId);
+	state.deviceId = message.deviceId;
+	state.lowQualityLogged = false;
+	clients.set(socket, state);
+	return state;
+}
+
+function createClientState(): M5ClientState {
+	return {
+		lowQualityLogged: false,
+		neutralSent: true,
+		staleTimer: null,
+	};
+}
+
+function applyDeadzoneAndClamp(
+	value: number,
+	minimum: number,
+	maximum: number,
+): number {
+	if (Math.abs(value) < M5_BRIDGE.DEADZONE_DEGREES) return 0;
+	return Math.max(minimum, Math.min(maximum, value));
+}
+
+function scheduleStaleNeutral(
+	message: M5OrientationMessage,
+	state: M5ClientState,
+	broadcast: BroadcastControllerMessage,
+): void {
+	clearStaleTimer(state);
+	state.neutralSent = false;
+	state.staleTimer = setTimeout(() => {
+		console.info(`[m5-bridge] Device stale: ${message.deviceId}; neutralizing`);
+		broadcastNeutralOrientation(state, broadcast, "stale");
+	}, M5_BRIDGE.STALE_TIMEOUT_MS);
+}
+
+function clearStaleTimer(state: M5ClientState): void {
+	if (!state.staleTimer) return;
+	clearTimeout(state.staleTimer);
+	state.staleTimer = null;
+}
+
+function broadcastNeutralOrientation(
+	state: M5ClientState,
+	broadcast: BroadcastControllerMessage,
+	reason: "disconnected" | "stale",
+): void {
+	if (state.neutralSent) return;
+	state.neutralSent = true;
+	state.staleTimer = null;
+	broadcast({
+		type: "orientation",
+		pitch: 0,
+		roll: 0,
+		timestamp: Date.now(),
+	});
+	console.info(`[m5-bridge] Neutral orientation sent (${reason})`);
+}
+
+function logLowQualityDrop(
+	message: M5OrientationMessage,
+	state: M5ClientState,
+): void {
+	if (state.lowQualityLogged) return;
+	state.lowQualityLogged = true;
+	console.warn(
+		`[m5-bridge] Dropping low-quality orientation from ${message.deviceId} (${message.quality})`,
+	);
 }
 
 function rawDataToString(raw: RawData): string {
