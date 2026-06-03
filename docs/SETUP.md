@@ -126,6 +126,83 @@ bun run dev --host
 
 ---
 
+## M5Stick Wireless Controller
+
+The simulator can receive M5Stick orientation data directly. No external M5 WebSocket Adapter server
+is needed during normal VR runtime.
+
+### Start Simulator With M5 Bridge
+
+```bash
+bun run dev
+```
+
+Expected terminal output:
+
+```text
+[m5-bridge] Listening on ws://0.0.0.0:8787/ws/device
+Local:   https://localhost:5173/
+Network: https://YOUR_MAC_IP:5173/
+```
+
+Disable the M5 bridge when needed:
+
+```bash
+M5_BRIDGE=0 bun run dev
+```
+
+### Configure The M5Stick
+
+The M5Stick must connect to the Mac's LAN IP, not `localhost`:
+
+```text
+ws://YOUR_MAC_IP:8787/ws/device
+```
+
+Example:
+
+```text
+ws://192.168.0.131:8787/ws/device
+```
+
+Do not use `localhost` for the M5Stick. From the M5Stick, `localhost` means the M5Stick itself.
+
+The M5 firmware currently requires plain WebSocket:
+
+```text
+ws://
+```
+
+It does not support:
+
+```text
+wss://
+```
+
+### Open VR
+
+Open the VR scene over HTTPS:
+
+```text
+https://YOUR_MAC_IP:5173/vr
+```
+
+Port summary:
+
+| Purpose | URL |
+| --- | --- |
+| Quest / browser app | `https://YOUR_MAC_IP:5173/vr` |
+| Browser WebSocket | `wss://YOUR_MAC_IP:5173` |
+| M5Stick input | `ws://YOUR_MAC_IP:8787/ws/device` |
+
+If the M5Stick stays at `LINK`, check firewall or antivirus rules. Local security software such as
+ESET or macOS Firewall may block inbound LAN traffic to Node/Vite. Allow incoming connections for
+Node.js and TCP port `8787`.
+
+For the detailed operating checklist, see [M5_WIRELESS_SETUP.md](M5_WIRELESS_SETUP.md).
+
+---
+
 ## Troubleshooting
 
 ### "Device unauthorized"
@@ -171,6 +248,20 @@ adb reverse --list
 - Use USB connection instead of Wi-Fi
 - Close other tabs on Quest
 - Check `adb reverse --list` shows active tunnel
+
+### M5Stick stuck at LINK
+
+- Confirm `bun run dev` is running in this repo
+- Confirm the terminal shows `[m5-bridge] Listening on ws://0.0.0.0:8787/ws/device`
+- Confirm the M5Stick URL is `ws://YOUR_MAC_IP:8787/ws/device`
+- Confirm Mac and M5Stick are on the same network
+- Confirm no other process owns port `8787`:
+
+```bash
+lsof -nP -iTCP:8787 -sTCP:LISTEN
+```
+
+- Allow inbound LAN traffic to Node/Vite in firewall or antivirus software
 
 ---
 
