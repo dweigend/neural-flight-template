@@ -346,10 +346,10 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 		uWaveAmp: new THREE.Uniform(0.4),
 		uPulse: new THREE.Uniform(0.0),
 		uBase: new THREE.Uniform(new THREE.Color(0x040009)),
-		uGlowA: new THREE.Uniform(new THREE.Color(0.55, 0.22, 0.8)),
-		uGlowB: new THREE.Uniform(new THREE.Color(0.95, 0.42, 0.82)),
-		uAccent: new THREE.Uniform(new THREE.Color(0.98, 0.8, 0.92)),
-		uGlowIntensity: new THREE.Uniform(0.9),
+		uGlowA: new THREE.Uniform(new THREE.Color(0.45, 0.12, 0.62)),
+		uGlowB: new THREE.Uniform(new THREE.Color(0.85, 0.22, 0.55)),
+		uAccent: new THREE.Uniform(new THREE.Color(0.98, 0.75, 0.9)),
+		uGlowIntensity: new THREE.Uniform(0.95),
 	};
 	const tunnelMesh = new THREE.Mesh(
 		new THREE.TubeGeometry(tunnelCurve, 280, TUNNEL_R, 32, false),
@@ -566,8 +566,12 @@ export function tick(state: ExperienceState, ctx: TickContext): { state: Experie
 
 	// ── Post-FX Progression ──
 	let tCA = 0.14, tWarp = 0.0, tFlick = 0.0;
-	if (s.phase === 0) { tCA = 0.14; tWarp = 0.0; }
-	else if (s.phase === 1) { tCA = 0.28; tWarp = 0.0; }
+	if (s.phase === 0) {
+		// Pull-in from void: strong CA + warp ramp for suction effect
+		const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.3, 4.5);
+		tCA = 0.2 + pull * 1.2;
+		tWarp = pull * 1.1;
+	} else if (s.phase === 1) { tCA = 0.28; tWarp = 0.0; }
 	else if (s.phase === 2) { tCA = 0.52 + Math.min(s.phaseT / 30, 1) * 0.48; tWarp = Math.min(s.phaseT / 30, 0.75); }
 
 	s.postCA += (tCA - s.postCA) * L;
@@ -619,7 +623,13 @@ export function tick(state: ExperienceState, ctx: TickContext): { state: Experie
 		s.camera.lookAt(next);
 		s.camZ = s.camera.position.z;
 
-		s.renderer.toneMappingExposure += (1.15 - s.renderer.toneMappingExposure) * delta * 0.5;
+		// FOV pulse for suction feel, then ease back
+		const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.3, 4.5);
+		const fovTarget = 86 + pull * 24;
+		s.camera.fov += (fovTarget - s.camera.fov) * delta * 2.2;
+		s.camera.updateProjectionMatrix();
+
+		s.renderer.toneMappingExposure += (1.1 - s.renderer.toneMappingExposure) * delta * 0.5;
 
 		if (s.tunnelProgress >= 1) {
 			s.dominantEye = lateral < 0 ? "left" : "right";
@@ -659,10 +669,10 @@ export function tick(state: ExperienceState, ctx: TickContext): { state: Experie
 	if (showTunnel) {
 		if (s.phase === 0) {
 			// Emergence: black → sparkles → canal glow (few seconds, smooth)
-			const sparkle = THREE.MathUtils.smoothstep(s.phaseT, 0.9, 2.4);
-			const canal = THREE.MathUtils.smoothstep(s.phaseT, 1.8, 4.0);
+			const sparkle = THREE.MathUtils.smoothstep(s.phaseT, 0.2, 3.0);
+			const canal = THREE.MathUtils.smoothstep(s.phaseT, 2.2, 5.2);
 			s.tunnelReveal = canal;
-			s.tunnelParticleMat.opacity = 0.02 + sparkle * 0.7;
+			s.tunnelParticleMat.opacity = 0.06 + sparkle * 0.95;
 			for (const fog of s.tunnelFog) {
 				const mat = fog.material as THREE.Material;
 				mat.opacity = 0.08 + canal * 0.5;
@@ -674,9 +684,9 @@ export function tick(state: ExperienceState, ctx: TickContext): { state: Experie
 			s.tunnelParticleMat.opacity = Math.max(0, s.tunnelParticleMat.opacity - delta * 1.2);
 		}
 		s.tunnelU.uTime.value = elapsed;
-		s.tunnelU.uGlowIntensity.value = 0.05 + s.tunnelReveal * 1.15;
-		s.tunnelU.uWaveAmp.value = 0.2 + s.tunnelReveal * 0.5;
-		s.tunnelU.uPulse.value = (Math.sin(elapsed * 0.9) * 0.5 + 0.5) * (0.2 + s.tunnelReveal * 0.35);
+		s.tunnelU.uGlowIntensity.value = 0.08 + s.tunnelReveal * 1.35;
+		s.tunnelU.uWaveAmp.value = 0.18 + s.tunnelReveal * 0.55;
+		s.tunnelU.uPulse.value = (Math.sin(elapsed * 0.8) * 0.5 + 0.5) * (0.18 + s.tunnelReveal * 0.35);
 		s.tunnelLight.position.copy(s.camera.position);
 		s.tunnelParticleMat.uniforms.uTime.value = elapsed;
 		for (let i = 0; i < s.tunnelFog.length; i++) {
