@@ -194,7 +194,9 @@ function mapM5OrientationToControllerMessage(
 }
 
 function mapM5Pitch(rawPitch: number, rawRoll: number): number {
-	if (!m5BridgeRuntimeConfig.calibrationEnabled) return rawPitch;
+	if (!m5BridgeRuntimeConfig.calibrationEnabled) {
+		return m5BridgeRuntimeConfig.mountingPitchUsesRoll ? rawRoll : rawPitch;
+	}
 	const rawValue = m5BridgeRuntimeConfig.calibrationPitchUsesRoll
 		? rawRoll
 		: rawPitch;
@@ -210,7 +212,9 @@ function mapM5Pitch(rawPitch: number, rawRoll: number): number {
 }
 
 function mapM5Roll(rawPitch: number, rawRoll: number): number {
-	if (!m5BridgeRuntimeConfig.calibrationEnabled) return rawRoll;
+	if (!m5BridgeRuntimeConfig.calibrationEnabled) {
+		return m5BridgeRuntimeConfig.mountingRollUsesPitch ? rawPitch : rawRoll;
+	}
 	const rawValue = m5BridgeRuntimeConfig.calibrationRollUsesPitch
 		? rawPitch
 		: rawRoll;

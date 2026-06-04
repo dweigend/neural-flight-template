@@ -41,6 +41,8 @@ export const M5_BRIDGE = {
 	ROLL_SCALE: 1,
 	INVERT_PITCH: false,
 	INVERT_ROLL: false,
+	MOUNTING_PITCH_USES_ROLL: false,
+	MOUNTING_ROLL_USES_PITCH: false,
 	PITCH_RANGE: CONTROLS.PITCH_RANGE,
 	ROLL_RANGE: CONTROLS.ROLL_RANGE,
 	STALE_TIMEOUT_MS: 3000,
@@ -57,6 +59,8 @@ export interface M5BridgeRuntimeConfig {
 	rollScale: number;
 	invertPitch: boolean;
 	invertRoll: boolean;
+	mountingPitchUsesRoll: boolean;
+	mountingRollUsesPitch: boolean;
 	maxPitch: number;
 	maxRoll: number;
 	staleTimeoutMs: number;
@@ -87,6 +91,8 @@ function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
 		rollScale: M5_BRIDGE.ROLL_SCALE,
 		invertPitch: M5_BRIDGE.INVERT_PITCH,
 		invertRoll: M5_BRIDGE.INVERT_ROLL,
+		mountingPitchUsesRoll: M5_BRIDGE.MOUNTING_PITCH_USES_ROLL,
+		mountingRollUsesPitch: M5_BRIDGE.MOUNTING_ROLL_USES_PITCH,
 		maxPitch: M5_BRIDGE.PITCH_RANGE[1],
 		maxRoll: M5_BRIDGE.ROLL_RANGE[1],
 		staleTimeoutMs: M5_BRIDGE.STALE_TIMEOUT_MS,
@@ -169,6 +175,16 @@ export function applyM5BridgeSettings(
 			case "invertRoll":
 				if (typeof value === "boolean") {
 					m5BridgeRuntimeConfig.invertRoll = value;
+				}
+				break;
+			case "mountingPitchUsesRoll":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.mountingPitchUsesRoll = value;
+				}
+				break;
+			case "mountingRollUsesPitch":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.mountingRollUsesPitch = value;
 				}
 				break;
 			case "maxPitch":

@@ -16,6 +16,7 @@ import {
 	Wifi,
 } from "lucide-svelte";
 import { onDestroy, onMount } from "svelte";
+import M5MountingPreview from "$lib/components/M5MountingPreview.svelte";
 import PageHeader from "$lib/components/PageHeader.svelte";
 import {
 	M5_BRIDGE,
@@ -37,7 +38,11 @@ type NumberSettingKey =
 	| "maxRoll"
 	| "staleTimeoutMs";
 
-type BooleanSettingKey = "invertPitch" | "invertRoll";
+type BooleanSettingKey =
+	| "invertPitch"
+	| "invertRoll"
+	| "mountingPitchUsesRoll"
+	| "mountingRollUsesPitch";
 
 interface NumberControl {
 	key: NumberSettingKey;
@@ -168,6 +173,8 @@ const defaults: M5BridgeRuntimeConfig = {
 	rollScale: M5_BRIDGE.ROLL_SCALE,
 	invertPitch: M5_BRIDGE.INVERT_PITCH,
 	invertRoll: M5_BRIDGE.INVERT_ROLL,
+	mountingPitchUsesRoll: M5_BRIDGE.MOUNTING_PITCH_USES_ROLL,
+	mountingRollUsesPitch: M5_BRIDGE.MOUNTING_ROLL_USES_PITCH,
 	maxPitch: M5_BRIDGE.PITCH_RANGE[1],
 	maxRoll: M5_BRIDGE.ROLL_RANGE[1],
 	staleTimeoutMs: M5_BRIDGE.STALE_TIMEOUT_MS,
@@ -271,6 +278,11 @@ const safetyControls: NumberControl[] = [
 const axisControls: BooleanControl[] = [
 	{ key: "invertPitch", label: "Invert pitch" },
 	{ key: "invertRoll", label: "Invert roll" },
+];
+
+const mountingControls: BooleanControl[] = [
+	{ key: "mountingPitchUsesRoll", label: "Pitch uses M5 roll" },
+	{ key: "mountingRollUsesPitch", label: "Roll uses M5 pitch" },
 ];
 
 const ws = createWebSocketClient();
@@ -464,6 +476,18 @@ function cancelCalibration(): void {
 	calibrationStatus = "idle";
 	calibrationMessage = "Calibration cancelled.";
 	calibrationRemainingMs = CALIBRATION_STEP_MS;
+}
+
+function useRawM5Readout(): void {
+	clearCalibrationTimer();
+	calibrationValues = null;
+	calibrationStatus = "idle";
+	calibrationMessage = "Using raw M5 readout. Mounting controls still apply.";
+	settings = {
+		...settings,
+		calibrationEnabled: false,
+	};
+	void sendSettings({ calibrationEnabled: false });
 }
 
 function runCalibrationStep(stepStartedAt: number): void {
@@ -891,6 +915,10 @@ onDestroy(() => {
 					{#if calibrationStatus === "running"}
 						<button class="btn btn-secondary" onclick={cancelCalibration}>Cancel</button>
 					{:else}
+						<button class="btn btn-secondary" onclick={useRawM5Readout}>
+							<RadioTower size={16} />
+							<span>Use raw M5 readout</span>
+						</button>
 						<button class="btn btn-primary" onclick={startCalibration}>
 							<Target size={16} />
 							<span>Start calibration</span>
@@ -937,6 +965,50 @@ onDestroy(() => {
 		<section class="m5-grid">
 			<div class="m5-panel surface-panel">
 				<div class="panel-heading">
+					<RadioTower size={16} />
+					<h2>Mounting</h2>
+				</div>
+
+				<M5MountingPreview
+					pitchUsesRoll={settings.mountingPitchUsesRoll}
+					rollUsesPitch={settings.mountingRollUsesPitch}
+					invertPitch={settings.invertPitch}
+					invertRoll={settings.invertRoll}
+				/>
+
+				<div class="switch-list">
+					{#each mountingControls as control (control.key)}
+						<div class="setting-row switch-row">
+							<span class="setting-label">{control.label}</span>
+							<Switch.Root
+								checked={settings[control.key]}
+								onCheckedChange={(value: boolean) => setBoolean(control.key, value)}
+								class="switch-root"
+							>
+								<Switch.Thumb class="switch-thumb" />
+							</Switch.Root>
+						</div>
+					{/each}
+				</div>
+
+				<div class="switch-list">
+					{#each axisControls as control (control.key)}
+						<div class="setting-row switch-row">
+							<span class="setting-label">{control.label}</span>
+							<Switch.Root
+								checked={settings[control.key]}
+								onCheckedChange={(value: boolean) => setBoolean(control.key, value)}
+								class="switch-root"
+							>
+								<Switch.Thumb class="switch-thumb" />
+							</Switch.Root>
+						</div>
+					{/each}
+				</div>
+			</div>
+
+			<div class="m5-panel surface-panel">
+				<div class="panel-heading">
 					<SlidersHorizontal size={16} />
 					<h2>Motion</h2>
 				</div>
@@ -965,21 +1037,6 @@ onDestroy(() => {
 						</Slider.Root>
 					</label>
 				{/each}
-
-				<div class="switch-list">
-					{#each axisControls as control (control.key)}
-						<div class="setting-row switch-row">
-							<span class="setting-label">{control.label}</span>
-							<Switch.Root
-								checked={settings[control.key]}
-								onCheckedChange={(value: boolean) => setBoolean(control.key, value)}
-								class="switch-root"
-							>
-								<Switch.Thumb class="switch-thumb" />
-							</Switch.Root>
-						</div>
-					{/each}
-				</div>
 			</div>
 
 			<div class="m5-panel surface-panel">
