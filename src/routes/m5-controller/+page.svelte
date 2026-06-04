@@ -21,7 +21,6 @@ import {
 	M5_BRIDGE,
 	type M5BridgeRuntimeConfig,
 } from "$lib/config/flight";
-import type { M5BridgeSettingsUpdate } from "$lib/types/orientation";
 import { createWebSocketClient } from "$lib/ws/client.svelte";
 import type { M5BridgeStatus } from "$lib/ws/m5-status";
 
@@ -316,28 +315,39 @@ function isLocalHostName(): boolean {
 
 function setNumber(key: NumberSettingKey, value: number): void {
 	settings = { ...settings, [key]: value };
-	sendSettings({ [key]: value });
+	void sendSettings({ [key]: value });
 }
 
 function setBoolean(key: BooleanSettingKey, value: boolean): void {
 	settings = { ...settings, [key]: value };
-	sendSettings({ [key]: value });
+	void sendSettings({ [key]: value });
 }
 
-function sendSettings(update: Record<string, number | boolean>): void {
-	const message: M5BridgeSettingsUpdate = {
-		type: "m5-settings",
-		settings: update,
-		timestamp: Date.now(),
-	};
-
-	ws.send(message);
-	lastSentAt = message.timestamp;
+async function sendSettings(
+	update: Record<string, number | boolean>,
+): Promise<void> {
+	try {
+		const response = await fetch("/api/m5/settings", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(update),
+		});
+		if (!response.ok) {
+			throw new Error(`Settings request failed: ${response.status}`);
+		}
+		const nextSettings = (await response.json()) as M5BridgeRuntimeConfig;
+		applyRuntimeSettings(nextSettings);
+		lastSentAt = Date.now();
+		statusError = null;
+	} catch (error) {
+		statusError =
+			error instanceof Error ? error.message : "Could not apply M5 settings.";
+	}
 }
 
 function resetDefaults(): void {
 	settings = { ...defaults };
-	sendSettings({ ...defaults });
+	void sendSettings({ ...defaults });
 	calibrationValues = null;
 	calibrationStatus = "idle";
 	calibrationMessage = "Calibration reset.";
@@ -363,6 +373,49 @@ async function refreshStatus(): Promise<M5BridgeStatus | null> {
 			error instanceof Error ? error.message : "Could not read M5 status.";
 		return null;
 	}
+}
+
+async function refreshRuntimeSettings(): Promise<void> {
+	try {
+		const response = await fetch("/api/m5/settings");
+		if (!response.ok) {
+			throw new Error(`Settings request failed: ${response.status}`);
+		}
+		const nextSettings = (await response.json()) as M5BridgeRuntimeConfig;
+		applyRuntimeSettings(nextSettings);
+		statusError = null;
+	} catch (error) {
+		statusError =
+			error instanceof Error ? error.message : "Could not read M5 settings.";
+	}
+}
+
+function applyRuntimeSettings(nextSettings: M5BridgeRuntimeConfig): void {
+	settings = { ...nextSettings };
+	if (nextSettings.calibrationEnabled) {
+		calibrationValues = calibrationValuesFromSettings(nextSettings);
+		calibrationStatus = "complete";
+		calibrationMessage = "Runtime calibration loaded.";
+	} else if (calibrationStatus === "complete") {
+		calibrationValues = null;
+		calibrationStatus = "idle";
+		calibrationMessage = "Ready to calibrate the mounted controller.";
+	}
+}
+
+function calibrationValuesFromSettings(
+	nextSettings: M5BridgeRuntimeConfig,
+): CalibrationValues {
+	return {
+		neutralPitch: nextSettings.calibrationNeutralPitch,
+		neutralRoll: nextSettings.calibrationNeutralRoll,
+		upPitch: nextSettings.calibrationUpPitch,
+		downPitch: nextSettings.calibrationDownPitch,
+		rightRoll: nextSettings.calibrationRightRoll,
+		leftRoll: nextSettings.calibrationLeftRoll,
+		pitchAxis: nextSettings.calibrationPitchUsesRoll ? "roll" : "pitch",
+		rollAxis: nextSettings.calibrationRollUsesPitch ? "pitch" : "roll",
+	};
 }
 
 async function startCalibration(): Promise<void> {
@@ -480,7 +533,7 @@ function finishCalibration(): void {
 		calibrationPitchUsesRoll: values.pitchAxis === "roll",
 		calibrationRollUsesPitch: values.rollAxis === "pitch",
 	};
-	sendSettings({
+	void sendSettings({
 		calibrationEnabled: true,
 		calibrationNeutralPitch: values.neutralPitch,
 		calibrationNeutralRoll: values.neutralRoll,
@@ -746,6 +799,7 @@ function formatNullableNumber(value: number | null, unit: string): string {
 }
 
 onMount(() => {
+	void refreshRuntimeSettings();
 	void refreshStatus();
 	const interval = window.setInterval(() => {
 		currentTime = Date.now();

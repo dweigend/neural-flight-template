@@ -65,6 +65,10 @@ export interface M5BridgeRuntimeConfig {
 	calibrationRollUsesPitch: boolean;
 }
 
+interface M5BridgeConfigGlobal {
+	__neuralFlightM5BridgeRuntimeConfig?: M5BridgeRuntimeConfig;
+}
+
 function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
 	return {
 		qualityThreshold: M5_BRIDGE.QUALITY_THRESHOLD,
@@ -89,8 +93,12 @@ function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
 	};
 }
 
-export let m5BridgeRuntimeConfig: M5BridgeRuntimeConfig =
-	createM5BridgeDefaults();
+export const m5BridgeRuntimeConfig: M5BridgeRuntimeConfig =
+	readM5BridgeRuntimeConfig();
+
+export function getM5BridgeRuntimeConfig(): M5BridgeRuntimeConfig {
+	return { ...m5BridgeRuntimeConfig };
+}
 
 export function applyM5BridgeSettings(
 	settings: Record<string, number | boolean>,
@@ -197,7 +205,13 @@ export function applyM5BridgeSettings(
 }
 
 export function resetM5BridgeSettings(): void {
-	m5BridgeRuntimeConfig = createM5BridgeDefaults();
+	Object.assign(m5BridgeRuntimeConfig, createM5BridgeDefaults());
+}
+
+function readM5BridgeRuntimeConfig(): M5BridgeRuntimeConfig {
+	const store = globalThis as typeof globalThis & M5BridgeConfigGlobal;
+	store.__neuralFlightM5BridgeRuntimeConfig ??= createM5BridgeDefaults();
+	return store.__neuralFlightM5BridgeRuntimeConfig;
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
