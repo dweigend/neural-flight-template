@@ -25,6 +25,7 @@ const TUBE_LENGTH = 500;
 const TUBE_NEAR_END = 10;
 const TUBE_FAR_END = -(TUBE_LENGTH - 10);
 const TUBE_RAD_SEG = 32;
+const LOOP_LENGTH = TUBE_NEAR_END - TUBE_FAR_END;
 const TUBE_Z_SEG = 100;
 
 const CANYON_WIDTH = 30;
@@ -41,6 +42,11 @@ const HALF_TRAIL = TRAIL_POINTS / 2;
 const VOID_FADE_DURATION = 5.0;
 const TRANSITION_DURATION = 2.0;
 const FADE_IN_DURATION = 10;
+
+const STARTUP_BLACK_DURATION = 2.0;
+const STARTUP_SENSE_DURATION = 3.0;
+const STARTUP_BINOC_DURATION = 3.0;
+const STARTUP_TOTAL_DURATION = STARTUP_BLACK_DURATION + STARTUP_SENSE_DURATION + STARTUP_BINOC_DURATION;
 
 // ── Phase definitions ──
 
@@ -587,6 +593,73 @@ function buildSplitScreenMesh(
 	return mesh;
 }
 
+// ── Phase 0: Startup overlay ──
+
+function buildStartupOverlay(): THREE.Mesh {
+	const mat = new THREE.ShaderMaterial({
+		transparent: true,
+		depthTest: false,
+		uniforms: {
+			uStartupTime: { value: 0 },
+			uCenterEyePos: { value: new THREE.Vector3(0, 0, 0) },
+		},
+		vertexShader: `
+			varying vec2 vUv;
+			void main() {
+				vUv = uv;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+			}
+		`,
+		fragmentShader: `
+			uniform float uStartupTime;
+			uniform vec3 uCenterEyePos;
+			varying vec2 vUv;
+
+			void main() {
+				vec3 col = vec3(0.0);
+
+				if (uStartupTime < 2.0) {
+					col = vec3(0.0);
+				} else if (uStartupTime < 5.0) {
+					float t = (uStartupTime - 2.0) / 3.0;
+					float pulse = sin(uStartupTime * 2.0) * 0.5 + 0.5;
+					float depth = abs(vUv.y - 0.5) * 2.0;
+					float vignette = 1.0 - depth * 0.3;
+					col = mix(vec3(0.0), vec3(0.03, 0.008, 0.02), t * vignette);
+					col += vec3(0.02, 0.005, 0.01) * pulse * vignette;
+					float noise = fract(sin(dot(vUv * 50.0, vec2(12.9898, 78.233))) * 43758.5453);
+					col += vec3(0.004, 0.002, 0.006) * noise * t;
+				} else if (uStartupTime < 8.0) {
+					float t = (uStartupTime - 5.0) / 3.0;
+					float radius = 0.05 + t * 0.3;
+					float softness = 0.03;
+
+					float isRightEye = step(0.0, cameraPosition.x - uCenterEyePos.x);
+					vec2 eyeCenter = vec2(0.5, 0.5);
+					float dist = length(vUv - eyeCenter);
+					float circle = 1.0 - smoothstep(radius - softness, radius, dist);
+
+					vec3 leftColor = vec3(0.9, 0.15, 0.05);
+					vec3 rightColor = vec3(0.05, 0.4, 0.9);
+					col = mix(leftColor, rightColor, isRightEye) * circle * t;
+				}
+
+				float flash = smoothstep(8.0, 8.5, uStartupTime);
+				float flashBright = 1.0 - smoothstep(8.0, 8.5, uStartupTime);
+				col = mix(col, vec3(1.0), flashBright * 0.6);
+				col *= 1.0 - flash;
+
+				gl_FragColor = vec4(col, 1.0);
+			}
+		`,
+	});
+	const geo = new THREE.PlaneGeometry(2, 2);
+	const mesh = new THREE.Mesh(geo, mat);
+	mesh.position.set(0, 0, -1);
+	mesh.renderOrder = 998;
+	return mesh;
+}
+
 // ── State ──
 
 export interface DesktopControls {
@@ -603,8 +676,7 @@ export interface B2LesserState extends ExperienceState {
 	camera: THREE.PerspectiveCamera;
 	scene: THREE.Scene | null;
 	renderer: THREE.WebGLRenderer | null;
-	lastOrientation: { pitch: number; roll: number };
-	steerSensitivity: number;
+	scrollOffset: number;
 
 	tubeGroup: THREE.Group;
 	canalMat: THREE.ShaderMaterial;
@@ -643,6 +715,11 @@ export interface B2LesserState extends ExperienceState {
 	fadeOverlay: THREE.Mesh;
 
 	desktop: DesktopControls;
+	lastOrientation: { pitch: number; roll: number };
+	steerSensitivity: number;
+
+	startupOverlay: THREE.Mesh;
+	startupComplete: boolean;
 
 	removeListener: (() => void) | null;
 }
@@ -749,13 +826,16 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 	fadeOverlay.renderOrder = 999;
 	ctx.camera.add(fadeOverlay);
 
+	// ── Startup overlay (phase 0) ──
+	const startupOverlay = buildStartupOverlay();
+	ctx.camera.add(startupOverlay);
+
 	const state: B2LesserState = {
 		elapsed: 0,
 		camera: ctx.camera,
 		scene,
 		renderer,
-		lastOrientation: { pitch: 0, roll: 0 },
-		steerSensitivity: 0.08,
+		scrollOffset: 0,
 
 		tubeGroup,
 		canalMat,
@@ -775,7 +855,7 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 		flightSpline,
 		flightProgress: 0,
 
-		phase: 1,
+		phase: 0,
 		phaseTime: 0,
 
 		voidReveal: 0,
@@ -793,6 +873,9 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 
 		fadeOverlay,
 
+		startupOverlay,
+		startupComplete: false,
+
 		desktop: {
 			keys: new Set(),
 			yaw: 0,
@@ -801,18 +884,25 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 			ready: false,
 			readyTimer: 0,
 		},
+		lastOrientation: { pitch: 0, roll: 0 },
+		steerSensitivity: 0.08,
 
 		removeListener: null,
 	};
 
-	applyPhase(state, 1);
+	applyPhase(state, 0);
 
-	// ── Phase switching (1-6) + Enter to start ──
+	// ── Phase switching (0-6) + Y to skip startup + Enter to start ──
 	const onKey = (e: KeyboardEvent): void => {
 		const k = e.key;
 		const num = k.length === 1 ? parseInt(k) : parseInt(k.replace("Numpad", ""));
-		if (!isNaN(num) && num >= 1 && num <= 6) {
+		if (!isNaN(num) && num >= 0 && num <= 6) {
 			applyPhase(state, num);
+		}
+		if ((e.key === "y" || e.key === "Y") && state.phase === 0) {
+			state.startupOverlay.visible = false;
+			state.startupComplete = true;
+			applyPhase(state, 1);
 		}
 		if (e.key === "Enter" && !state.vrStarted) {
 			state.vrStarted = true;
@@ -872,8 +962,26 @@ function applyPhase(s: B2LesserState, phase: number): void {
 	const prevPhase = s.phase;
 	s.phase = phase;
 	s.phaseTime = 0;
-	s.camera.position.set(0, 0, TUBE_NEAR_END);
+	s.camera.position.set(0, 0, 0);
 	s.camera.rotation.set(0, 0, 0);
+
+	if (phase !== 0) {
+		s.scrollOffset = TUBE_NEAR_END;
+	}
+
+	// Phase 0: startup overlay
+	if (phase === 0) {
+		s.tubeGroup.visible = false;
+		s.duneGroup.visible = false;
+		s.skyGroup.visible = false;
+		if (s.splitScreenMesh) s.splitScreenMesh.visible = false;
+		if (s.voidSphere) s.voidSphere.visible = false;
+		s.startupOverlay.visible = true;
+		s.startupComplete = false;
+		return;
+	}
+
+	if (s.startupOverlay) s.startupOverlay.visible = false;
 
 	// Cleanup phase-specific objects
 	if (s.splitScreenMesh) s.splitScreenMesh.visible = false;
@@ -967,6 +1075,35 @@ function recursiveDispose(obj: THREE.Object3D): void {
 	}
 }
 
+function shiftChildrenZ(parent: THREE.Object3D, offset: number): void {
+	for (const child of parent.children) {
+		child.position.z += offset;
+		if (child instanceof THREE.Group) {
+			shiftChildrenZ(child, offset);
+		}
+	}
+}
+
+function wrapScrollOffset(s: B2LesserState, delta: number, pitchSpeed: number): void {
+	s.scrollOffset -= pitchSpeed * delta;
+
+	if (s.scrollOffset < TUBE_FAR_END) {
+		const overflow = TUBE_FAR_END - s.scrollOffset;
+		const wrapDist = LOOP_LENGTH * Math.ceil(overflow / LOOP_LENGTH);
+		s.scrollOffset += wrapDist;
+		shiftChildrenZ(s.tubeGroup, -wrapDist);
+		shiftChildrenZ(s.duneGroup, -wrapDist);
+		shiftChildrenZ(s.skyGroup, -wrapDist);
+	} else if (s.scrollOffset > TUBE_NEAR_END) {
+		const overflow = s.scrollOffset - TUBE_NEAR_END;
+		const wrapDist = LOOP_LENGTH * Math.ceil(overflow / LOOP_LENGTH);
+		s.scrollOffset -= wrapDist;
+		shiftChildrenZ(s.tubeGroup, wrapDist);
+		shiftChildrenZ(s.duneGroup, wrapDist);
+		shiftChildrenZ(s.skyGroup, wrapDist);
+	}
+}
+
 // ── Tick ──
 
 export function tick(
@@ -984,7 +1121,9 @@ export function tick(
 	s.phaseTime += delta;
 
 	const fadeMat = s.fadeOverlay.material as THREE.MeshBasicMaterial;
-	if (s.elapsed < FADE_IN_DURATION) {
+	if (s.phase === 0) {
+		fadeMat.opacity = 1;
+	} else if (s.elapsed < FADE_IN_DURATION) {
 		fadeMat.opacity = 1 - s.elapsed / FADE_IN_DURATION;
 	} else {
 		fadeMat.opacity = 0;
@@ -992,6 +1131,12 @@ export function tick(
 	}
 
 	const phase = s.phase;
+
+	if (phase === 0) {
+		tickStartup(s, delta);
+		return { state: s };
+	}
+
 	const def = PHASES[phase - 1];
 
 	if (def.type === "tunnel") {
@@ -1037,6 +1182,18 @@ export function tick(
 
 // ── Tick sub-functions ──
 
+function tickStartup(s: B2LesserState, delta: number): void {
+	const mat = s.startupOverlay.material as THREE.ShaderMaterial;
+	mat.uniforms.uStartupTime.value = s.phaseTime;
+	mat.uniforms.uCenterEyePos.value.copy(s.camera.position);
+
+	if (s.phaseTime >= STARTUP_TOTAL_DURATION && !s.startupComplete) {
+		s.startupOverlay.visible = false;
+		s.startupComplete = true;
+		applyPhase(s, 1);
+	}
+}
+
 function tickTunnel(s: B2LesserState, delta: number, def: TunnelPhaseDef): void {
 	if (s.phaseTime < VOID_FADE_DURATION) {
 		s.voidReveal = Math.min(1.0, s.phaseTime / VOID_FADE_DURATION);
@@ -1061,21 +1218,18 @@ function tickTunnel(s: B2LesserState, delta: number, def: TunnelPhaseDef): void 
 	s.canalMat.uniforms.uShapeZ.value = p.shapeDist;
 	s.canalMat.uniforms.uShapeScale.value = p.shapeScale * (0.8 + 0.2 * shapePulse);
 
-	let camZ: number;
-
 	if (s.desktop.isLocked) {
-		camZ = s.camera.position.z;
+		s.scrollOffset = s.camera.position.z;
 	} else {
-		const pushWave = Math.sin(s.elapsed * 0.4) * 0.5 + 0.5;
-		const step = (p.speed + p.pushAmp * pushWave) * delta;
-		camZ = s.camera.position.z - step;
-		camZ = Math.min(TUBE_NEAR_END, Math.max(TUBE_FAR_END, camZ));
-		s.camera.position.z = camZ;
-		s.camera.position.x = Math.sin(camZ * 0.015) * 2.0 + s.lastOrientation.roll * s.steerSensitivity;
-		s.camera.position.y = Math.cos(camZ * 0.01) * 1.2;
+		const pitchSpeed = -s.lastOrientation.pitch * s.steerSensitivity * 5;
+		wrapScrollOffset(s, delta, pitchSpeed);
+		const targetX = Math.sin(s.scrollOffset * 0.015) * 2.0 + s.lastOrientation.roll * s.steerSensitivity;
+		s.camera.position.x = Math.min(2.8, Math.max(-2.8, targetX));
+		s.camera.position.y = Math.cos(s.scrollOffset * 0.01) * 1.2;
 	}
 
-	s.canalMat.uniforms.uLightZ.value = camZ - 30;
+	s.tubeGroup.position.z = s.scrollOffset;
+	s.canalMat.uniforms.uLightZ.value = s.scrollOffset - 30;
 }
 
 function tickDesert(s: B2LesserState, delta: number, def: DunePhaseDef): void {
@@ -1090,24 +1244,23 @@ function tickDesert(s: B2LesserState, delta: number, def: DunePhaseDef): void {
 	s.duneMat.uniforms.uWarpCenter.value = new THREE.Vector3(
 		Math.sin(s.elapsed * 0.1) * 3,
 		-2,
-		s.camera.position.z - 50,
-	);
+		s.scrollOffset - 50,
+	).sub(s.duneGroup.position);
 	s.duneMat.uniforms.uBright.value = def.bright;
 
-	// Camera Z controlled by pitch (forward/backward), roll controls X steering
-	const pushWave = Math.sin(s.elapsed * 0.4) * 0.5 + 0.5;
 	const pitchSpeed = -s.lastOrientation.pitch * s.steerSensitivity * 5;
-	const step = (pitchSpeed + def.pushAmp * pushWave) * delta;
-	s.camera.position.z -= step;
-	s.camera.position.z = Math.min(TUBE_NEAR_END, Math.max(TUBE_FAR_END, s.camera.position.z));
+	wrapScrollOffset(s, delta, pitchSpeed);
 
-	const camZ = s.camera.position.z;
-	const bend = Math.sin(camZ * 0.008) * 1.5;
-	s.camera.position.x = bend + s.lastOrientation.roll * s.steerSensitivity;
-	s.camera.position.y = 2.0 + Math.sin(camZ * 0.006) * 0.5;
+	const bend = Math.sin(s.scrollOffset * 0.008) * 1.5;
+	const targetX = bend + s.lastOrientation.roll * s.steerSensitivity;
+	s.camera.position.x = Math.min(14, Math.max(-14, targetX));
+	s.camera.position.y = 2.0 + Math.sin(s.scrollOffset * 0.006) * 0.5;
 	s.camera.rotation.x = 0;
 	s.camera.rotation.y = 0;
 	s.camera.rotation.z = 0;
+
+	s.duneGroup.position.z = s.scrollOffset;
+	s.skyGroup.position.z = s.scrollOffset * 0.5;
 
 	// Crystal rotation (update instance matrices for a subset via dummy)
 	const rotSpeed = 0.3 + def.crystalSpeed * 0.5;
@@ -1132,22 +1285,21 @@ function tickDesert(s: B2LesserState, delta: number, def: DunePhaseDef): void {
 		(gp.tube.material as THREE.MeshBasicMaterial).opacity = 0.5 + pulse * 0.4;
 	}
 
-	// Update balls + trails (camZ already declared above)
+	// Update balls + trails (local space within duneGroup)
 	const ballSpeedMult = def.ballSpeed * 0.5 + 0.3;
-	const camOffset = camZ + 120;
 
 	for (const b of s.balls) {
 		b.pathIdx += delta * b.speed * ballSpeedMult;
 		if (b.pathIdx >= 1) b.pathIdx -= 1;
 
 		const pos = b.curve.getPoint(b.pathIdx);
-		b.mesh.position.set(pos.x, pos.y, pos.z + camOffset);
+		b.mesh.position.set(pos.x, pos.y, pos.z + 120);
 
 		const trailPos = b.trail.geometry.attributes.position.array as Float32Array;
 		for (let j = 0; j < TRAIL_POINTS; j++) {
 			trailPos[j * 3] = b.trailPositions[j * 3];
 			trailPos[j * 3 + 1] = b.trailPositions[j * 3 + 1];
-			trailPos[j * 3 + 2] = b.trailPositions[j * 3 + 2] + camOffset;
+			trailPos[j * 3 + 2] = b.trailPositions[j * 3 + 2] + 120;
 		}
 		b.trail.geometry.attributes.position.needsUpdate = true;
 
@@ -1183,10 +1335,10 @@ function tickLeviathanDive(s: B2LesserState, delta: number): void {
 	s.camera.position.z -= step;
 	s.camera.position.y -= diveProgress * delta * 3;
 
-	const wellCenter = new THREE.Vector3(0, -5 - diveProgress * 20, s.camera.position.z - 20);
+	const wellCenter = new THREE.Vector3(0, -5 - diveProgress * 20, s.scrollOffset - 20);
 
 	s.duneMat.uniforms.uWarpStrength.value = 3 + diveProgress * 5;
-	s.duneMat.uniforms.uWarpCenter.value = wellCenter;
+	s.duneMat.uniforms.uWarpCenter.value = wellCenter.sub(s.duneGroup.position);
 
 	s.shakeIntensity = 0.05 + diveProgress * 0.2;
 
@@ -1227,6 +1379,8 @@ function applyShake(s: B2LesserState, delta: number): void {
 function easeInCubic(t: number): number {
 	return t * t * t;
 }
+
+
 
 function applyDesktopControls(s: B2LesserState, delta: number): void {
 	const keys = s.desktop.keys;
@@ -1281,6 +1435,12 @@ export function dispose(state: ExperienceState, _scene: THREE.Scene): void {
 	s.fadeOverlay.geometry.dispose();
 	(s.fadeOverlay.material as THREE.Material).dispose();
 	s.camera.remove(s.fadeOverlay);
+
+	if (s.startupOverlay) {
+		s.startupOverlay.geometry.dispose();
+		(s.startupOverlay.material as THREE.Material).dispose();
+		s.camera.remove(s.startupOverlay);
+	}
 
 	s.canalMat.dispose();
 	s.fogMats.forEach((m) => m.dispose());

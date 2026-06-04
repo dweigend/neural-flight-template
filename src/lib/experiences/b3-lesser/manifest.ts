@@ -26,12 +26,12 @@ const parameters: ParameterDef[] = [
 ];
 
 export const manifest: ExperienceManifest = {
-	id: "b2-lesser",
-	name: "b2.lesser",
+	id: "b3-lesser",
+	name: "b3.lesser",
 	description:
-		"Dune canyon experience — Moebius desert with glowing crystals and flying orbs.",
-	version: "0.2.0",
-	author: "LUFULI",
+		"Infinite dune canyon — endless Moebius desert with scrolling terrain, glowing crystals and flying orbs.",
+	version: "0.1.0",
+	author: "LULULIFU",
 
 	parameters,
 	interfaces: { orientation: true, speed: false },
