@@ -27,7 +27,10 @@ import type { M5BridgeStatus } from "$lib/ws/m5-status";
 type NumberSettingKey =
 	| "qualityThreshold"
 	| "deadzoneDegrees"
+	| "pitchDeadzoneDegrees"
+	| "rollDeadzoneDegrees"
 	| "smoothingAlpha"
+	| "smoothingAmount"
 	| "pitchScale"
 	| "rollScale"
 	| "maxPitch"
@@ -157,7 +160,10 @@ const calibrationSteps: CalibrationStep[] = [
 const defaults: M5BridgeRuntimeConfig = {
 	qualityThreshold: M5_BRIDGE.QUALITY_THRESHOLD,
 	deadzoneDegrees: M5_BRIDGE.DEADZONE_DEGREES,
+	pitchDeadzoneDegrees: M5_BRIDGE.PITCH_DEADZONE_DEGREES,
+	rollDeadzoneDegrees: M5_BRIDGE.ROLL_DEADZONE_DEGREES,
 	smoothingAlpha: M5_BRIDGE.SMOOTHING_ALPHA,
+	smoothingAmount: M5_BRIDGE.SMOOTHING_AMOUNT,
 	pitchScale: M5_BRIDGE.PITCH_SCALE,
 	rollScale: M5_BRIDGE.ROLL_SCALE,
 	invertPitch: M5_BRIDGE.INVERT_PITCH,
@@ -178,12 +184,28 @@ const defaults: M5BridgeRuntimeConfig = {
 
 const motionControls: NumberControl[] = [
 	{
-		key: "deadzoneDegrees",
-		label: "Dead zone",
+		key: "pitchDeadzoneDegrees",
+		label: "Pitch dead zone",
 		min: 0,
 		max: 10,
 		step: 0.25,
 		unit: "deg",
+	},
+	{
+		key: "rollDeadzoneDegrees",
+		label: "Roll dead zone",
+		min: 0,
+		max: 10,
+		step: 0.25,
+		unit: "deg",
+	},
+	{
+		key: "smoothingAmount",
+		label: "Smoothing",
+		min: 0,
+		max: 0.95,
+		step: 0.05,
+		unit: "",
 	},
 	{
 		key: "smoothingAlpha",

@@ -33,7 +33,10 @@ export const CONTROLS = {
 export const M5_BRIDGE = {
 	QUALITY_THRESHOLD: 0.5,
 	DEADZONE_DEGREES: 1.5,
+	PITCH_DEADZONE_DEGREES: 1.5,
+	ROLL_DEADZONE_DEGREES: 1.5,
 	SMOOTHING_ALPHA: 1,
+	SMOOTHING_AMOUNT: 0,
 	PITCH_SCALE: 1,
 	ROLL_SCALE: 1,
 	INVERT_PITCH: false,
@@ -46,7 +49,10 @@ export const M5_BRIDGE = {
 export interface M5BridgeRuntimeConfig {
 	qualityThreshold: number;
 	deadzoneDegrees: number;
+	pitchDeadzoneDegrees: number;
+	rollDeadzoneDegrees: number;
 	smoothingAlpha: number;
+	smoothingAmount: number;
 	pitchScale: number;
 	rollScale: number;
 	invertPitch: boolean;
@@ -73,7 +79,10 @@ function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
 	return {
 		qualityThreshold: M5_BRIDGE.QUALITY_THRESHOLD,
 		deadzoneDegrees: M5_BRIDGE.DEADZONE_DEGREES,
+		pitchDeadzoneDegrees: M5_BRIDGE.PITCH_DEADZONE_DEGREES,
+		rollDeadzoneDegrees: M5_BRIDGE.ROLL_DEADZONE_DEGREES,
 		smoothingAlpha: M5_BRIDGE.SMOOTHING_ALPHA,
+		smoothingAmount: M5_BRIDGE.SMOOTHING_AMOUNT,
 		pitchScale: M5_BRIDGE.PITCH_SCALE,
 		rollScale: M5_BRIDGE.ROLL_SCALE,
 		invertPitch: M5_BRIDGE.INVERT_PITCH,
@@ -112,12 +121,34 @@ export function applyM5BridgeSettings(
 				break;
 			case "deadzoneDegrees":
 				if (typeof value === "number") {
-					m5BridgeRuntimeConfig.deadzoneDegrees = clamp(value, 0, 15);
+					const deadzone = clamp(value, 0, 15);
+					m5BridgeRuntimeConfig.deadzoneDegrees = deadzone;
+					m5BridgeRuntimeConfig.pitchDeadzoneDegrees = deadzone;
+					m5BridgeRuntimeConfig.rollDeadzoneDegrees = deadzone;
+				}
+				break;
+			case "pitchDeadzoneDegrees":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.pitchDeadzoneDegrees = clamp(value, 0, 15);
+				}
+				break;
+			case "rollDeadzoneDegrees":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.rollDeadzoneDegrees = clamp(value, 0, 15);
 				}
 				break;
 			case "smoothingAlpha":
 				if (typeof value === "number") {
 					m5BridgeRuntimeConfig.smoothingAlpha = clamp(value, 0.05, 1);
+					m5BridgeRuntimeConfig.smoothingAmount =
+						1 - m5BridgeRuntimeConfig.smoothingAlpha;
+				}
+				break;
+			case "smoothingAmount":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.smoothingAmount = clamp(value, 0, 0.95);
+					m5BridgeRuntimeConfig.smoothingAlpha =
+						1 - m5BridgeRuntimeConfig.smoothingAmount;
 				}
 				break;
 			case "pitchScale":
