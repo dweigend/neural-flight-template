@@ -29,6 +29,7 @@
 	},
 	"dependencies": {
 		"@codemirror/lang-cpp": "^6.0.3",
+		"@dimforge/rapier3d-compat": "^0.19.3",
 		"@xyflow/svelte": "^1.5.0",
 		"bits-ui": "^2.15.4",
 		"codemirror": "^6.0.2",

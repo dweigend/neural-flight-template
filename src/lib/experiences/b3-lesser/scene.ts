@@ -45,8 +45,12 @@ const FADE_IN_DURATION = 10;
 
 const STARTUP_BLACK_DURATION = 2.0;
 const STARTUP_SENSE_DURATION = 3.0;
-const STARTUP_BINOC_DURATION = 3.0;
-const STARTUP_TOTAL_DURATION = STARTUP_BLACK_DURATION + STARTUP_SENSE_DURATION + STARTUP_BINOC_DURATION;
+const STARTUP_TOTAL_DURATION = STARTUP_BLACK_DURATION + STARTUP_SENSE_DURATION;
+const STARTUP_SELECTION_THRESHOLD = 0.3;
+
+const BINOC_SHAPE_DURATION = 3.0;
+const BINOC_SELECTION_DURATION = 2.0;
+const BINOC_TOTAL_DURATION = BINOC_SHAPE_DURATION + BINOC_SELECTION_DURATION;
 
 // ── Phase definitions ──
 
@@ -97,12 +101,12 @@ const PHASES: PhaseDef[] = [
 		type: "dune",
 		speed: 4,
 		pushAmp: 3,
-		duneColor1: [0.58, 0.24, 0.51],
-		duneColor2: [0.35, 0.12, 0.25],
-		duneColor3: [0.77, 0.48, 0.61],
+		duneColor1: [0.25, 0.15, 0.28],
+		duneColor2: [0.15, 0.08, 0.18],
+		duneColor3: [0.35, 0.22, 0.38],
 		crystalSpeed: 0.3,
 		ballSpeed: 0.6,
-		bright: 1.0,
+		bright: 0.6,
 		warpStrength: 0.0,
 		warpMode: 0,
 		shakeMag: 0.0,
@@ -601,7 +605,6 @@ function buildStartupOverlay(): THREE.Mesh {
 		depthTest: false,
 		uniforms: {
 			uStartupTime: { value: 0 },
-			uCenterEyePos: { value: new THREE.Vector3(0, 0, 0) },
 		},
 		vertexShader: `
 			varying vec2 vUv;
@@ -612,40 +615,117 @@ function buildStartupOverlay(): THREE.Mesh {
 		`,
 		fragmentShader: `
 			uniform float uStartupTime;
-			uniform vec3 uCenterEyePos;
 			varying vec2 vUv;
 
 			void main() {
 				vec3 col = vec3(0.0);
+				float t = uStartupTime;
 
-				if (uStartupTime < 2.0) {
+				if (t < 2.0) {
 					col = vec3(0.0);
-				} else if (uStartupTime < 5.0) {
-					float t = (uStartupTime - 2.0) / 3.0;
-					float pulse = sin(uStartupTime * 2.0) * 0.5 + 0.5;
+				} else if (t < 5.0) {
+					float p = (t - 2.0) / 3.0;
+					float pulse = sin(t * 2.0) * 0.5 + 0.5;
 					float depth = abs(vUv.y - 0.5) * 2.0;
-					float vignette = 1.0 - depth * 0.3;
-					col = mix(vec3(0.0), vec3(0.03, 0.008, 0.02), t * vignette);
-					col += vec3(0.02, 0.005, 0.01) * pulse * vignette;
-					float noise = fract(sin(dot(vUv * 50.0, vec2(12.9898, 78.233))) * 43758.5453);
-					col += vec3(0.004, 0.002, 0.006) * noise * t;
-				} else if (uStartupTime < 8.0) {
-					float t = (uStartupTime - 5.0) / 3.0;
-					float radius = 0.05 + t * 0.3;
-					float softness = 0.03;
-
-					float isRightEye = step(0.0, cameraPosition.x - uCenterEyePos.x);
-					vec2 eyeCenter = vec2(0.5, 0.5);
-					float dist = length(vUv - eyeCenter);
-					float circle = 1.0 - smoothstep(radius - softness, radius, dist);
-
-					vec3 leftColor = vec3(0.9, 0.15, 0.05);
-					vec3 rightColor = vec3(0.05, 0.4, 0.9);
-					col = mix(leftColor, rightColor, isRightEye) * circle * t;
+					float vig = 1.0 - depth * 0.3;
+					col = mix(vec3(0.0), vec3(0.03, 0.008, 0.02), p * vig);
+					col += vec3(0.02, 0.005, 0.01) * pulse * vig;
 				}
 
-				float flash = smoothstep(8.0, 8.5, uStartupTime);
-				float flashBright = 1.0 - smoothstep(8.0, 8.5, uStartupTime);
+				float flash = smoothstep(5.0, 5.3, t);
+				float flashBright = 1.0 - smoothstep(5.0, 5.3, t);
+				col = mix(col, vec3(1.0), flashBright * 0.6);
+				col *= 1.0 - flash;
+
+				gl_FragColor = vec4(col, 1.0);
+			}
+		`,
+	});
+	const geo = new THREE.PlaneGeometry(2, 2);
+	const mesh = new THREE.Mesh(geo, mat);
+	mesh.position.set(0, 0, -1);
+	mesh.renderOrder = 998;
+	return mesh;
+}
+
+// ── Binocular overlay (appears at tube end) ──
+
+function buildBinocularOverlay(): THREE.Mesh {
+	const mat = new THREE.ShaderMaterial({
+		transparent: true,
+		depthTest: false,
+		uniforms: {
+			uTime: { value: 0 },
+			uSelectionRoll: { value: 0 },
+			uDominantLocked: { value: 0 },
+			uDominantEye: { value: 0 },
+		},
+		vertexShader: `
+			varying vec2 vUv;
+			void main() {
+				vUv = uv;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+			}
+		`,
+		fragmentShader: `
+			uniform float uTime;
+			uniform float uSelectionRoll;
+			uniform float uDominantLocked;
+			uniform float uDominantEye;
+			varying vec2 vUv;
+
+			float sdTriangle(vec2 p, float size) {
+				const float k = sqrt(3.0);
+				p.x = abs(p.x) - size;
+				p.y = p.y + size / k;
+				if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
+				p.x -= clamp(p.x, -2.0 * size, 0.0);
+				return -length(p) * sign(p.y);
+			}
+
+			void main() {
+				vec3 col = vec3(0.0);
+				float t = uTime;
+
+				float shapeT = min(1.0, t / 3.0);
+				float size = 0.05 + shapeT * 0.35;
+				float softness = 0.03;
+				vec2 sp = vUv - vec2(0.5, 0.5);
+
+				// Circle (left side)
+				float cd = length(sp + vec2(0.2, 0.0));
+				float circle = 1.0 - smoothstep(size - softness, size, cd);
+
+				// Triangle (right side)
+				float td = sdTriangle(sp - vec2(0.2, 0.0), size * 1.2);
+				float triangle = 1.0 - smoothstep(0.0, softness, td);
+
+				float leftSide = step(sp.x, 0.0);
+				float shape = mix(triangle, circle, leftSide);
+				float glow = exp(-cd * 6.0) * 0.3;
+
+				vec3 leftCol = vec3(0.9, 0.7, 0.1);
+				vec3 rightCol = vec3(0.2, 0.7, 0.9);
+				vec3 shapeCol = mix(leftCol, rightCol, leftSide);
+
+				col = shapeCol * (shape * 0.9 + glow) * shapeT;
+
+				float selGlow = 0.0;
+				if (uDominantLocked > 0.5) {
+					float chosen = uDominantEye;
+					if (abs(leftSide - chosen) < 0.5) {
+						selGlow = 0.5 + 0.5 * sin(t * 5.0);
+					}
+				} else if (t > 3.0) {
+					float lean = uSelectionRoll;
+					if ((lean < -0.2 && leftSide < 0.5) || (lean > 0.2 && leftSide > 0.5)) {
+						selGlow = 0.3 + 0.3 * sin(t * 3.0);
+					}
+				}
+				col += vec3(1.0) * selGlow * shape;
+
+				float flash = smoothstep(5.0, 5.3, t);
+				float flashBright = 1.0 - smoothstep(5.0, 5.3, t);
 				col = mix(col, vec3(1.0), flashBright * 0.6);
 				col *= 1.0 - flash;
 
@@ -718,10 +798,77 @@ export interface B2LesserState extends ExperienceState {
 	lastOrientation: { pitch: number; roll: number };
 	steerSensitivity: number;
 
+	crystalMountains: THREE.Group;
+	nightSkyGroup: THREE.Group;
+
 	startupOverlay: THREE.Mesh;
+	binocularOverlay: THREE.Mesh | null;
+	binocularTime: number;
 	startupComplete: boolean;
+	dominantEye: number;
+	selectionLocked: boolean;
 
 	removeListener: (() => void) | null;
+}
+
+// ── Crystal mountains (large crystals at terrain edges for phase 2+) ──
+
+function buildCrystalMountains(outlineMat: THREE.ShaderMaterial): THREE.Group {
+	const group = new THREE.Group();
+	const geo = createHexPrismGeometry(2.0, 6.0);
+	const gradient = createToonGradient();
+
+	const colors = [
+		new THREE.Color(0.2, 0.3, 0.7),
+		new THREE.Color(0.4, 0.2, 0.6),
+		new THREE.Color(0.1, 0.5, 0.5),
+		new THREE.Color(0.5, 0.15, 0.4),
+	];
+
+	for (let i = 0; i < 16; i++) {
+		const side = i < 8 ? -1 : 1;
+		const zPos = TUBE_NEAR_END - 30 - (i % 8) * 50 + Math.random() * 20;
+		const xPos = side * (8 + Math.random() * 8);
+		const yPos = 2 + Math.random() * 4;
+		const scale = 2.5 + Math.random() * 5;
+		const color = colors[i % colors.length];
+
+		const mat = new THREE.MeshToonMaterial({
+			color,
+			gradientMap: gradient,
+			emissive: color,
+			emissiveIntensity: 0.15,
+		});
+		const mesh = new THREE.Mesh(geo, mat);
+		mesh.position.set(xPos, yPos, zPos);
+		mesh.scale.setScalar(scale);
+		mesh.rotation.set(
+			(Math.random() - 0.5) * 0.5,
+			Math.random() * Math.PI * 2,
+			(Math.random() - 0.5) * 0.3,
+		);
+		group.add(mesh);
+
+		const outlineMesh = new THREE.Mesh(geo.clone(), outlineMat);
+		outlineMesh.position.copy(mesh.position);
+		outlineMesh.scale.copy(mesh.scale);
+		outlineMesh.rotation.copy(mesh.rotation);
+		group.add(outlineMesh);
+	}
+
+	return group;
+}
+
+// ── Night sky (denser, brighter stars for phase 2) ──
+
+function buildNightSky(): THREE.Group {
+	const group = new THREE.Group();
+	const stars = createStarField(4000);
+	const mat = stars.material as THREE.PointsMaterial;
+	mat.size = 2.0;
+	mat.opacity = 0.9;
+	group.add(stars);
+	return group;
 }
 
 // ── Setup ──
@@ -787,6 +934,16 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 	skyGroup.visible = false;
 	scene.add(skyGroup);
 
+	// ── Night sky group (denser stars for phase 2) ──
+	const nightSkyGroup = buildNightSky();
+	nightSkyGroup.visible = false;
+	scene.add(nightSkyGroup);
+
+	// ── Crystal mountains (phase 2+) ──
+	const crystalMountains = buildCrystalMountains(outlineMat);
+	crystalMountains.visible = false;
+	duneGroup.add(crystalMountains);
+
 	// ── Phase 6 elements (pre-built, added when phase activates) ──
 	const voidSphere = buildVoidSphere();
 	voidSphere.visible = false;
@@ -830,6 +987,11 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 	const startupOverlay = buildStartupOverlay();
 	ctx.camera.add(startupOverlay);
 
+	// ── Binocular overlay (appears at tube end) ──
+	const binocularOverlay = buildBinocularOverlay();
+	binocularOverlay.visible = false;
+	ctx.camera.add(binocularOverlay);
+
 	const state: B2LesserState = {
 		elapsed: 0,
 		camera: ctx.camera,
@@ -851,6 +1013,8 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 		balls,
 
 		skyGroup,
+		nightSkyGroup,
+		crystalMountains,
 		goldenPath,
 		flightSpline,
 		flightProgress: 0,
@@ -874,7 +1038,11 @@ export async function setup(ctx: SetupContext): Promise<B2LesserState> {
 		fadeOverlay,
 
 		startupOverlay,
+		binocularOverlay,
+		binocularTime: 0,
 		startupComplete: false,
+		dominantEye: 0,
+		selectionLocked: false,
 
 		desktop: {
 			keys: new Set(),
@@ -967,6 +1135,15 @@ function applyPhase(s: B2LesserState, phase: number): void {
 
 	if (phase !== 0) {
 		s.scrollOffset = TUBE_NEAR_END;
+		s.selectionLocked = false;
+		s.dominantEye = 0;
+		s.binocularTime = 0;
+		if (s.binocularOverlay) {
+			const m = s.binocularOverlay.material as THREE.ShaderMaterial;
+			m.uniforms.uDominantLocked.value = 0;
+			m.uniforms.uDominantEye.value = 0;
+			m.uniforms.uTime.value = 0;
+		}
 	}
 
 	// Phase 0: startup overlay
@@ -974,14 +1151,18 @@ function applyPhase(s: B2LesserState, phase: number): void {
 		s.tubeGroup.visible = false;
 		s.duneGroup.visible = false;
 		s.skyGroup.visible = false;
+		s.nightSkyGroup.visible = false;
+		s.crystalMountains.visible = false;
 		if (s.splitScreenMesh) s.splitScreenMesh.visible = false;
 		if (s.voidSphere) s.voidSphere.visible = false;
 		s.startupOverlay.visible = true;
 		s.startupComplete = false;
+		if (s.binocularOverlay) s.binocularOverlay.visible = false;
 		return;
 	}
 
 	if (s.startupOverlay) s.startupOverlay.visible = false;
+	if (s.binocularOverlay) s.binocularOverlay.visible = false;
 
 	// Cleanup phase-specific objects
 	if (s.splitScreenMesh) s.splitScreenMesh.visible = false;
@@ -992,6 +1173,12 @@ function applyPhase(s: B2LesserState, phase: number): void {
 		recursiveDispose(s.leviathanMesh);
 		s.leviathanMesh = null;
 	}
+
+	// Show/hide crystal mountains for phases 2-5
+	s.crystalMountains.visible = phase >= 2 && phase <= 5;
+
+	// Night sky for phase 2 only
+	s.nightSkyGroup.visible = phase === 2;
 
 	// Show/hide golden path for phases 2-5
 	if (s.goldenPath) {
@@ -1030,6 +1217,12 @@ function applyPhase(s: B2LesserState, phase: number): void {
 
 		s.duneGroup.visible = true;
 		s.skyGroup.visible = true;
+
+		if (s.scene) {
+			s.scene.background = phase === 2
+				? new THREE.Color(0.01, 0.01, 0.05)
+				: new THREE.Color(0x000000);
+		}
 
 		const p = def;
 
@@ -1141,6 +1334,10 @@ export function tick(
 
 	if (def.type === "tunnel") {
 		tickTunnel(s, delta, def);
+		if (s.binocularOverlay?.visible) {
+			tickBinocular(s, delta);
+			return { state: s };
+		}
 	} else if (phase === 6) {
 		tickSplitScreen(s, delta);
 	} else {
@@ -1185,7 +1382,6 @@ export function tick(
 function tickStartup(s: B2LesserState, delta: number): void {
 	const mat = s.startupOverlay.material as THREE.ShaderMaterial;
 	mat.uniforms.uStartupTime.value = s.phaseTime;
-	mat.uniforms.uCenterEyePos.value.copy(s.camera.position);
 
 	if (s.phaseTime >= STARTUP_TOTAL_DURATION && !s.startupComplete) {
 		s.startupOverlay.visible = false;
@@ -1195,6 +1391,8 @@ function tickStartup(s: B2LesserState, delta: number): void {
 }
 
 function tickTunnel(s: B2LesserState, delta: number, def: TunnelPhaseDef): void {
+	if (!s.binocularOverlay || s.binocularOverlay.visible) return;
+
 	if (s.phaseTime < VOID_FADE_DURATION) {
 		s.voidReveal = Math.min(1.0, s.phaseTime / VOID_FADE_DURATION);
 	} else {
@@ -1222,14 +1420,56 @@ function tickTunnel(s: B2LesserState, delta: number, def: TunnelPhaseDef): void 
 		s.scrollOffset = s.camera.position.z;
 	} else {
 		const pitchSpeed = -s.lastOrientation.pitch * s.steerSensitivity * 5;
-		wrapScrollOffset(s, delta, pitchSpeed);
-		const targetX = Math.sin(s.scrollOffset * 0.015) * 2.0 + s.lastOrientation.roll * s.steerSensitivity;
+		s.scrollOffset -= pitchSpeed * delta;
+		if (s.scrollOffset > TUBE_NEAR_END) {
+			s.scrollOffset = TUBE_NEAR_END;
+		} else if (s.scrollOffset < TUBE_FAR_END) {
+			s.scrollOffset = TUBE_FAR_END;
+			// Reached tube end — activate binocular test
+			s.binocularOverlay.visible = true;
+			s.binocularTime = 0;
+		}
+		const targetX = s.lastOrientation.roll * 2.0;
 		s.camera.position.x = Math.min(2.8, Math.max(-2.8, targetX));
 		s.camera.position.y = Math.cos(s.scrollOffset * 0.01) * 1.2;
 	}
 
 	s.tubeGroup.position.z = s.scrollOffset;
 	s.canalMat.uniforms.uLightZ.value = s.scrollOffset - 30;
+}
+
+function tickBinocular(s: B2LesserState, delta: number): void {
+	if (!s.binocularOverlay) return;
+
+	s.binocularTime += delta;
+	const mat = s.binocularOverlay.material as THREE.ShaderMaterial;
+	mat.uniforms.uTime.value = s.binocularTime;
+	mat.uniforms.uSelectionRoll.value = s.lastOrientation.roll;
+
+	// Selection after shapes have appeared for 3s
+	if (s.binocularTime > 3.0 && !s.selectionLocked) {
+		const roll = s.lastOrientation.roll;
+		if (roll < -STARTUP_SELECTION_THRESHOLD) {
+			s.dominantEye = 0;
+			s.selectionLocked = true;
+			mat.uniforms.uDominantLocked.value = 1;
+			mat.uniforms.uDominantEye.value = 0;
+		} else if (roll > STARTUP_SELECTION_THRESHOLD) {
+			s.dominantEye = 1;
+			s.selectionLocked = true;
+			mat.uniforms.uDominantLocked.value = 1;
+			mat.uniforms.uDominantEye.value = 1;
+		}
+	}
+
+	if (s.binocularTime >= BINOC_TOTAL_DURATION) {
+		if (!s.selectionLocked) {
+			s.dominantEye = 0;
+			s.selectionLocked = true;
+		}
+		s.binocularOverlay.visible = false;
+		applyPhase(s, 2);
+	}
 }
 
 function tickDesert(s: B2LesserState, delta: number, def: DunePhaseDef): void {
@@ -1442,6 +1682,12 @@ export function dispose(state: ExperienceState, _scene: THREE.Scene): void {
 		s.camera.remove(s.startupOverlay);
 	}
 
+	if (s.binocularOverlay) {
+		s.binocularOverlay.geometry.dispose();
+		(s.binocularOverlay.material as THREE.Material).dispose();
+		s.camera.remove(s.binocularOverlay);
+	}
+
 	s.canalMat.dispose();
 	s.fogMats.forEach((m) => m.dispose());
 	s.outlineMat.dispose();
@@ -1484,6 +1730,18 @@ export function dispose(state: ExperienceState, _scene: THREE.Scene): void {
 	}
 
 	if (s.leviathanMesh) recursiveDispose(s.leviathanMesh);
+
+	// Dispose night sky
+	s.nightSkyGroup.children.forEach((child) => {
+		if (child instanceof THREE.Points) {
+			child.geometry.dispose();
+			(child.material as THREE.Material).dispose();
+		}
+	});
+	s.scene?.remove(s.nightSkyGroup);
+
+	// Dispose crystal mountains
+	recursiveDispose(s.crystalMountains);
 
 	if (s.voidSphere) {
 		s.voidSphere.geometry.dispose();
