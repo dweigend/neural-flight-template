@@ -2,6 +2,7 @@ import { manifest as b1Lesser } from "./b1-lesser";
 import { manifest as b2Lesser } from "./b2-lesser";
 import { manifest as b3Lesser } from "./b3-lesser";
 import { manifest as b4Lesser } from "./b4-lesser";
+import { manifest as b5Lesser } from "./b5-lesser";
 import { manifest as bLesser } from "./b-lesser/manifest";
 import { manifest as cloudTowers } from "./cloud-towers";
 import { manifest as gradientPrism } from "./gradient-prism";
@@ -22,6 +23,7 @@ const CATALOG: Record<string, ExperienceManifest> = {
 	"b2-lesser": b2Lesser,
 	"b3-lesser": b3Lesser,
 	"b4-lesser": b4Lesser,
+	"b5-lesser": b5Lesser,
 	"b-lesser": bLesser,
 	"cloud-towers": cloudTowers,
 	"gradient-prism": gradientPrism,
