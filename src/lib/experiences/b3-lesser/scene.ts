@@ -1334,10 +1334,6 @@ export function tick(
 
 	if (def.type === "tunnel") {
 		tickTunnel(s, delta, def);
-		if (s.binocularOverlay?.visible) {
-			tickBinocular(s, delta);
-			return { state: s };
-		}
 	} else if (phase === 6) {
 		tickSplitScreen(s, delta);
 	} else {
@@ -1391,8 +1387,6 @@ function tickStartup(s: B2LesserState, delta: number): void {
 }
 
 function tickTunnel(s: B2LesserState, delta: number, def: TunnelPhaseDef): void {
-	if (!s.binocularOverlay || s.binocularOverlay.visible) return;
-
 	if (s.phaseTime < VOID_FADE_DURATION) {
 		s.voidReveal = Math.min(1.0, s.phaseTime / VOID_FADE_DURATION);
 	} else {
@@ -1420,15 +1414,7 @@ function tickTunnel(s: B2LesserState, delta: number, def: TunnelPhaseDef): void 
 		s.scrollOffset = s.camera.position.z;
 	} else {
 		const pitchSpeed = -s.lastOrientation.pitch * s.steerSensitivity * 5;
-		s.scrollOffset -= pitchSpeed * delta;
-		if (s.scrollOffset > TUBE_NEAR_END) {
-			s.scrollOffset = TUBE_NEAR_END;
-		} else if (s.scrollOffset < TUBE_FAR_END) {
-			s.scrollOffset = TUBE_FAR_END;
-			// Reached tube end — activate binocular test
-			s.binocularOverlay.visible = true;
-			s.binocularTime = 0;
-		}
+		wrapScrollOffset(s, delta, pitchSpeed);
 		const targetX = s.lastOrientation.roll * 2.0;
 		s.camera.position.x = Math.min(2.8, Math.max(-2.8, targetX));
 		s.camera.position.y = Math.cos(s.scrollOffset * 0.01) * 1.2;
