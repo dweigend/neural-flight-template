@@ -2,8 +2,8 @@ import * as THREE from "three";
 
 export const EXTERNAL_INPUT_GRACE_MS = 250;
 
-const MOVE_SPEED = 8;
-const VERTICAL_MOVE_SPEED = 5;
+const MOVE_SPEED = 40;
+const VERTICAL_MOVE_SPEED = 30;
 const MOVE_RESPONSE = 8;
 const ROTATION_RESPONSE = 10;
 const MAX_YAW_SPEED = 1.8;
