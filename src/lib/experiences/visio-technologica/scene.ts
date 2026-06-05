@@ -1,6 +1,12 @@
 import * as THREE from "three";
 import { createSky } from "$lib/three/sky";
 import type { ExperienceState, SetupContext, TickContext } from "../types";
+import {
+  createKeyboardCameraControls,
+  disposeKeyboardCameraControls,
+  updateKeyboardCameraControls,
+  type KeyboardCameraControls,
+} from "./keyboard-camera-controls";
 import { createHexFloor, disposeHexFloor, HEX_RADIUS } from "./hex-floor";
 import {
   createZonedTiles,
@@ -28,6 +34,8 @@ export interface VisioTechnologicaState extends ExperienceState {
   zonedTiles: THREE.Group;
   zoneTileAssets: ZoneTileAsset[];
   tileMaterial: THREE.MeshStandardMaterial;
+  keyboardControls: KeyboardCameraControls;
+  keyboardControlsActive: boolean;
   tileSize: number;
   tileGap: number;
   tileHeight: number;
@@ -45,6 +53,7 @@ export interface VisioTechnologicaState extends ExperienceState {
 export async function setup(
   ctx: SetupContext,
 ): Promise<VisioTechnologicaState> {
+  const keyboardControls = createKeyboardCameraControls(ctx.camera);
   const sky = createSky({
     radius: 700,
     detail: 3,
@@ -83,6 +92,8 @@ export async function setup(
     zonedTiles,
     zoneTileAssets,
     tileMaterial,
+    keyboardControls,
+    keyboardControlsActive: true,
     tileSize: DEFAULT_TILE_SIZE,
     tileGap: DEFAULT_TILE_GAP,
     tileHeight: DEFAULT_TILE_HEIGHT,
@@ -104,15 +115,20 @@ export function tick(
 ): { state: ExperienceState; outputs?: Record<string, number> } {
   const s = state as VisioTechnologicaState;
 
-  s.camera.position.z -= s.driftSpeed * ctx.delta;
-  s.camera.position.x += s.steeringRoll * s.steerSpeed * ctx.delta;
-  s.flightHeight = THREE.MathUtils.clamp(
-    s.flightHeight + s.steeringPitch * s.verticalSteerSpeed * ctx.delta,
-    MIN_FLIGHT_HEIGHT,
-    MAX_FLIGHT_HEIGHT,
-  );
-  s.camera.position.y =
-    s.flightHeight + Math.sin(ctx.elapsed * s.bobSpeed) * s.bobAmplitude;
+  if (s.keyboardControlsActive) {
+    updateKeyboardCameraControls(s.keyboardControls, s.camera, ctx.delta);
+    s.flightHeight = s.camera.position.y;
+  } else {
+    s.camera.position.z -= s.driftSpeed * ctx.delta;
+    s.camera.position.x += s.steeringRoll * s.steerSpeed * ctx.delta;
+    s.flightHeight = THREE.MathUtils.clamp(
+      s.flightHeight + s.steeringPitch * s.verticalSteerSpeed * ctx.delta,
+      MIN_FLIGHT_HEIGHT,
+      MAX_FLIGHT_HEIGHT,
+    );
+    s.camera.position.y =
+      s.flightHeight + Math.sin(ctx.elapsed * s.bobSpeed) * s.bobAmplitude;
+  }
 
   s.sky.position.copy(s.camera.position);
 
@@ -122,6 +138,7 @@ export function tick(
 export function dispose(state: ExperienceState, scene: THREE.Scene): void {
   const s = state as VisioTechnologicaState;
 
+  disposeKeyboardCameraControls(s.keyboardControls);
   disposeHexFloor(s.tiles, scene);
   disposeZonedTileGroup(s.zonedTiles, scene);
   disposeZoneTileAssets(s.zoneTileAssets);
