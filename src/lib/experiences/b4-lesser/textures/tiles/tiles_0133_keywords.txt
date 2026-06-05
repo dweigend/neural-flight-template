@@ -1,0 +1,1 @@
+tile, line, circle, quarter, curve, decoration, decorated, wall, beige

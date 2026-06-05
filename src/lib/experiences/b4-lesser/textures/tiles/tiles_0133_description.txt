@@ -1,0 +1,8 @@
+Name:
+Seamless Tiles of Parallel Lines and Quarter Circles (Tiles 0133)
+
+Description:
+Decorated wall of randomly placed parallel stripes and stripy curves.
+
+Author:
+https://www.texturecan.com

@@ -34,13 +34,23 @@ import starFrag from "./shaders/star.frag?raw";
 // @ts-ignore
 import postFrag from "./shaders/post.frag?raw";
 
+// ── Explicit Texture Imports for Vite Bundling ──────────────────────────
+// @ts-ignore
+import colorMapUrl from "./textures/tiles.2/tiles_0121_color_4k.jpg?url";
+// @ts-ignore
+import aoMapUrl from "./textures/tiles.2/tiles_0121_ao_4k.jpg?url";
+// @ts-ignore
+import heightMapUrl from "./textures/tiles.2/tiles_0121_height_4k.png?url";
+// @ts-ignore
+import normalMapUrl from "./textures/tiles.2/tiles_0121_normal_opengl_4k.png?url";
+
 // ═══════════════════════════════════════════════════════════════════════
 //  CUSTOM POST-PROCESSING EFFECT
 // ═══════════════════════════════════════════════════════════════════════
 
 class B4LesserEffect extends Effect {
 	constructor() {
-		super("B4LesserEffect", postFrag, {
+			super("B4LesserEffect", postFrag, {
 			uniforms: new Map<string, THREE.Uniform<number>>([
 				["uCA", new THREE.Uniform(0.14)],
 				["uWarp", new THREE.Uniform(0.0)],
@@ -48,6 +58,12 @@ class B4LesserEffect extends Effect {
 				["uFlicker", new THREE.Uniform(0.0)],
 				["uHeartbeat", new THREE.Uniform(0.0)],
 				["uTime", new THREE.Uniform(0.0)],
+				["uScan", new THREE.Uniform(0.0)],
+				["uVhs", new THREE.Uniform(0.0)],
+				["uGlitch", new THREE.Uniform(0.0)],
+				["uNonDomVig", new THREE.Uniform(0.0)],
+				["uDomEye", new THREE.Uniform(0.0)],
+				["uWhiteout", new THREE.Uniform(0.0)],
 			]),
 		});
 	}
@@ -58,6 +74,12 @@ class B4LesserEffect extends Effect {
 	setFlicker(v: number): void { (this.uniforms.get("uFlicker") as THREE.Uniform<number>).value = v; }
 	setHeartbeat(v: number): void { (this.uniforms.get("uHeartbeat") as THREE.Uniform<number>).value = v; }
 	setTime(v: number): void { (this.uniforms.get("uTime") as THREE.Uniform<number>).value = v; }
+	setScan(v: number): void { (this.uniforms.get("uScan") as THREE.Uniform<number>).value = v; }
+	setVhs(v: number): void { (this.uniforms.get("uVhs") as THREE.Uniform<number>).value = v; }
+	setGlitch(v: number): void { (this.uniforms.get("uGlitch") as THREE.Uniform<number>).value = v; }
+	setNonDomVig(v: number): void { (this.uniforms.get("uNonDomVig") as THREE.Uniform<number>).value = v; }
+	setDomEye(v: number): void { (this.uniforms.get("uDomEye") as THREE.Uniform<number>).value = v; }
+	setWhiteout(v: number): void { (this.uniforms.get("uWhiteout") as THREE.Uniform<number>).value = v; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -115,7 +137,7 @@ function createStarField(count: number, rMin: number, rMax: number, lenZ: number
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  TRAIL OBJECT (Past/Future Lines)
+//  TRAIL OBJECT
 // ═══════════════════════════════════════════════════════════════════════
 
 const TRAIL_N = 10;
@@ -254,6 +276,11 @@ interface TunnelUniforms {
 	uGlowB: THREE.Uniform<THREE.Color>;
 	uAccent: THREE.Uniform<THREE.Color>;
 	uGlowIntensity: THREE.Uniform<number>;
+	uTex: THREE.Uniform<THREE.Texture | null>;
+	uTexAO: THREE.Uniform<THREE.Texture | null>;
+	uTexHeight: THREE.Uniform<THREE.Texture | null>;
+	uTexNormal: THREE.Uniform<THREE.Texture | null>;
+	uTexScale: THREE.Uniform<THREE.Vector2>;
 }
 
 interface TunnelHaloUniforms {
@@ -273,6 +300,11 @@ export interface B4LesserState extends ExperienceState {
 
 	camZ: number; camPos: THREE.Vector3; heading: number; lateralX: number; currentSpeed: number;
 	delayedPitch: number; delayedRoll: number;
+	debugInput: { pitch: number; roll: number; accel: boolean; brake: boolean; active: boolean; phase: number | null };
+	keys: Set<string>;
+	moveVel: THREE.Vector3;
+	lookYaw: number;
+	lookPitch: number;
 
 	tunnelSpeed: number; baseSpeed: number;
 	phaseDuration: number; bendSpeed: number;
@@ -291,19 +323,29 @@ export interface B4LesserState extends ExperienceState {
 	tunnelProgress: number;
 	tunnelParticles: THREE.Points; tunnelParticleMat: THREE.ShaderMaterial;
 	tunnelFog: THREE.Mesh[]; tunnelFogMat: THREE.ShaderMaterial[];
-	circleSymbol: THREE.Mesh; triangleSymbol: THREE.Mesh; circleGlowU: GlowUniforms; triangleGlowU: GlowUniforms;
+	
+	colorTex: THREE.Texture | null;
+	aoTex: THREE.Texture | null;
+	heightTex: THREE.Texture | null;
+	normalTex: THREE.Texture | null;
 
-	closedDoor: THREE.Mesh; openDoor: THREE.Mesh;
+	closedDoor: THREE.Object3D; openDoor: THREE.Object3D;
+	closedDoorOutline: THREE.Object3D; openDoorOutline: THREE.Object3D;
+	escapeStar: THREE.Mesh; escapeStarU: GlowUniforms;
+	room: THREE.Mesh; roomLightL: THREE.PointLight; roomLightR: THREE.PointLight;
+	roomBackLight: THREE.PointLight;
 
 	cageMesh: THREE.Mesh; cageU: CageUniforms;
 	stars: THREE.Points; nebula: THREE.Points;
 	trails: TrailObject[]; trailSc: number;
-	gpMesh: THREE.Points; gpGeo: THREE.BufferGeometry; gpSamp: THREE.Vector3[];
 	threats: THREE.Mesh[]; threatGlowU: GlowUniforms[];
 	_onResize: () => void;
+	_onKeyDown: (e: KeyboardEvent) => void;
+	_onKeyUp: (e: KeyboardEvent) => void;
+	_onMouseMove: (e: MouseEvent) => void;
 }
 
-const TUNNEL_R = 6.4; const TUNNEL_LEN = 320; const CAGE_R = 16; const CAGE_LEN = 400; const GP_N = 850;
+const TUNNEL_R = 6.4; const TUNNEL_LEN = 320; const CAGE_R = 16; const CAGE_LEN = 400;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  SETUP
@@ -329,34 +371,97 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 	// ── Curved tunnel path ─────────────────────────────────────────
 	const tunnelPoints: THREE.Vector3[] = [];
 	for (let z = 0; z <= TUNNEL_LEN; z += 3) {
-		const t = -z * 0.04;
+		const t = -z * 0.05;
 		tunnelPoints.push(
 			new THREE.Vector3(
-				Math.sin(t) * 5.5 + Math.sin(t * 0.35) * 3.2,
-				Math.cos(t * 0.45) * 4.8 + Math.sin(t * 0.25) * 2.6,
+				Math.sin(t) * 6.8 + Math.sin(t * 0.42) * 4.1 + Math.cos(t * 0.18) * 2.2,
+				Math.cos(t * 0.52) * 5.5 + Math.sin(t * 0.33) * 3.8 + Math.sin(t * 0.15) * 1.9,
 				-z,
 			),
 		);
 	}
 	const tunnelCurve = new THREE.CatmullRomCurve3(tunnelPoints);
 	const tunnelFrames = tunnelCurve.computeFrenetFrames(240, false);
+	
+	let stateRef: B4LesserState;
+
+	const _onMouseMove = (e: MouseEvent) => {
+		if (!stateRef || stateRef.phase !== 0) return;
+		const sens = 0.0022;
+		stateRef.lookYaw -= e.movementX * sens;
+		stateRef.lookPitch -= e.movementY * sens;
+		stateRef.lookPitch = Math.max(-1.2, Math.min(1.2, stateRef.lookPitch));
+	};
+
+	// ── Texture Loading ─────────────────────────────────────────
+	const textureLoader = new THREE.TextureLoader();
+	const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+	const fallbackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+	fallbackTex.needsUpdate = true;
+
+	const calcPerfectTileScale = (img: HTMLImageElement | undefined, tileMeters: number): THREE.Vector2 => {
+		const w = img?.width ?? 1024;
+		const h = img?.height ?? 1024;
+		const aspect = w / h;
+		const circumference = 2 * Math.PI * TUNNEL_R;
+		const repeatX = TUNNEL_LEN / tileMeters;
+		const repeatY = circumference / (tileMeters * aspect);
+		return new THREE.Vector2(repeatX, repeatY);
+	};
+
+	const prepTexture = (tex: THREE.Texture) => {
+		tex.wrapS = THREE.RepeatWrapping;
+		tex.wrapT = THREE.RepeatWrapping;
+		tex.anisotropy = maxAnisotropy;
+		tex.minFilter = THREE.LinearMipMapLinearFilter;
+		tex.magFilter = THREE.LinearFilter;
+	};
+
+	let colorTex: THREE.Texture = fallbackTex;
+	let aoTex: THREE.Texture = fallbackTex;
+	let heightTex: THREE.Texture = fallbackTex;
+	let normalTex: THREE.Texture = fallbackTex;
+	let groundScale = new THREE.Vector2(1, 1);
+
+	try {
+		[colorTex, aoTex, heightTex, normalTex] = await Promise.all([
+			textureLoader.loadAsync(colorMapUrl),
+			textureLoader.loadAsync(aoMapUrl),
+			textureLoader.loadAsync(heightMapUrl),
+			textureLoader.loadAsync(normalMapUrl)
+		]);
+
+		colorTex.colorSpace = THREE.SRGBColorSpace; 
+		[colorTex, aoTex, heightTex, normalTex].forEach(prepTexture);
+		groundScale = calcPerfectTileScale(colorTex.image, 2.5);
+	} catch (e) {
+		console.error("Texture load failed. Check URL imports at top of file.", e);
+	}
 
 	const tunnelU: TunnelUniforms = {
 		uTime: new THREE.Uniform(0.0),
 		uWaveAmp: new THREE.Uniform(0.4),
 		uPulse: new THREE.Uniform(0.0),
-		uBase: new THREE.Uniform(new THREE.Color(0x040009)),
-		uGlowA: new THREE.Uniform(new THREE.Color(0.45, 0.12, 0.62)),
-		uGlowB: new THREE.Uniform(new THREE.Color(0.85, 0.22, 0.55)),
-		uAccent: new THREE.Uniform(new THREE.Color(0.98, 0.75, 0.9)),
-		uGlowIntensity: new THREE.Uniform(0.95),
+		uBase: new THREE.Uniform(new THREE.Color(0x0a0112)),
+		uGlowA: new THREE.Uniform(new THREE.Color(0x6600cc)),    // Deep Violet
+		uGlowB: new THREE.Uniform(new THREE.Color(0xff4d00)),    // Searing Orange
+		uAccent: new THREE.Uniform(new THREE.Color(0xffe600)),   // Intense Yellow
+		uGlowIntensity: new THREE.Uniform(1.3), 
+		uTex: new THREE.Uniform(colorTex),
+		uTexAO: new THREE.Uniform(aoTex),
+		uTexHeight: new THREE.Uniform(heightTex),
+		uTexNormal: new THREE.Uniform(normalTex),
+		uTexScale: new THREE.Uniform(groundScale),
 	};
+
 	const tunnelMesh = new THREE.Mesh(
 		new THREE.TubeGeometry(tunnelCurve, 280, TUNNEL_R, 32, false),
 		new THREE.ShaderMaterial({
 			vertexShader: tunnelVert,
 			fragmentShader: tunnelFrag,
 			uniforms: tunnelU as any,
+			transparent: false,
+			depthWrite: true,
 			side: THREE.BackSide,
 		})
 	);
@@ -365,7 +470,7 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 	const tunnelHaloU: TunnelHaloUniforms = {
 		uTime: new THREE.Uniform(0.0),
 		uDrift: new THREE.Uniform(0.14),
-		uColorA: new THREE.Uniform(new THREE.Color(0.55, 0.2, 0.9)),
+		uColorA: new THREE.Uniform(new THREE.Color(0x55, 0.2, 0.9)),
 		uColorB: new THREE.Uniform(new THREE.Color(0.95, 0.5, 0.8)),
 		uIntensity: new THREE.Uniform(0.0),
 	};
@@ -386,13 +491,34 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 	const tunnelLight = new THREE.PointLight(0x4a1a88, 3.2, 28); scene.add(tunnelLight);
 	const tunnelAmbient = new THREE.AmbientLight(0x120a2a, 0.2); scene.add(tunnelAmbient);
 
-	// ── Tunnel particles (cosmic dust) ─────────────────────────────
-	const particleCount = 8000;
+	// ── Room (post-suction) ───────────────────────────────────────
+	const room = new THREE.Mesh(
+		new THREE.BoxGeometry(40, 20, 50),
+		new THREE.MeshStandardMaterial({
+			color: 0x06060a,
+			metalness: 0.1,
+			roughness: 0.9,
+			side: THREE.BackSide,
+		}),
+	);
+	room.visible = false;
+	scene.add(room);
+
+	const roomLightL = new THREE.PointLight(0x7b2cff, 2.0, 18);
+	const roomLightR = new THREE.PointLight(0xff5ab0, 2.0, 18);
+	const roomBackLight = new THREE.PointLight(0xfff0f8, 1.0, 34);
+	roomLightL.visible = false;
+	roomLightR.visible = false;
+	roomBackLight.visible = false;
+	scene.add(roomLightL, roomLightR, roomBackLight);
+
+	// ── Tunnel particles (Heatmap Dust - Increased to 25k) ─────────────────────────────
+	const particleCount = 25000;
 	const pPos = new Float32Array(particleCount * 3);
 	const pCol = new Float32Array(particleCount * 3);
 	const pSz = new Float32Array(particleCount);
 	const pPh = new Float32Array(particleCount);
-	const color = new THREE.Color();
+	const pColor = new THREE.Color();
 	for (let i = 0; i < particleCount; i++) {
 		const t = Math.random();
 		const pt = tunnelCurve.getPointAt(t);
@@ -408,18 +534,22 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 		pPos[i * 3] = pos.x;
 		pPos[i * 3 + 1] = pos.y;
 		pPos[i * 3 + 2] = pos.z;
+		
+        // Blue/Purple/Yellow Palette
 		const r = Math.random();
-		if (r < 0.6) {
-			color.setHSL(0.88, 0.45, 0.82); // pink-purple
-		} else if (r < 0.9) {
-			color.setHSL(0.78, 0.4, 0.78); // purple
+		if (r < 0.33) {
+			pColor.setHex(0x00d9ff); // Blue
+		} else if (r < 0.66) {
+			pColor.setHex(0x9d00ff); // Purple
 		} else {
-			color.setHSL(0.62, 0.35, 0.75); // soft blue accent
+			pColor.setHex(0xffcc00); // Yellow
 		}
-		pCol[i * 3] = color.r;
-		pCol[i * 3 + 1] = color.g;
-		pCol[i * 3 + 2] = color.b;
-		pSz[i] = 0.08 + Math.random() * 0.35;
+		pCol[i * 3] = pColor.r;
+		pCol[i * 3 + 1] = pColor.g;
+		pCol[i * 3 + 2] = pColor.b;
+
+		// Corrected particle size for anamorphic flares
+		pSz[i] = 0.2 + Math.random() * 0.45;
 		pPh[i] = Math.random() * Math.PI * 2;
 	}
 	const pGeo = new THREE.BufferGeometry();
@@ -440,66 +570,115 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 	scene.add(tunnelParticles);
 
 	// ── Tunnel fog sheets ─────────────────────────────────────────
-	const fogGeo = new THREE.CircleGeometry(4, 16);
-	const fogV = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
-	const fogF = "uniform float uTime; uniform vec3 uColor; varying vec2 vUv; void main(){ float d = distance(vUv, vec2(0.5)); float a = smoothstep(0.5, 0.0, d) * 0.07; a *= 0.5 + 0.5 * sin(uTime + vUv.x * 3.0); gl_FragColor = vec4(uColor, a); }";
 	const tunnelFog: THREE.Mesh[] = [];
 	const tunnelFogMat: THREE.ShaderMaterial[] = [];
-	for (let i = 0; i < 90; i++) {
-		const zPos = -Math.random() * TUNNEL_LEN - 5;
-		const t = Math.min(0.999, Math.max(0.001, -zPos / TUNNEL_LEN));
-		const path = tunnelCurve.getPointAt(t);
-		const ang = (Math.random() - 0.5) * Math.PI * 0.6;
-		const rad = (Math.random() - 0.5) * 1.4;
-		const fogMat = new THREE.ShaderMaterial({
-			vertexShader: fogV,
-			fragmentShader: fogF,
-			uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0.5, 0.25, 0.85) } },
-			transparent: true,
-			blending: THREE.AdditiveBlending,
-			depthWrite: false,
-			side: THREE.DoubleSide,
-		});
-		const fog = new THREE.Mesh(fogGeo, fogMat);
-		const fogRadius = 2 + Math.random() * 2.5;
-		fog.scale.set(fogRadius, fogRadius, 1);
-		fog.position.set(path.x + Math.cos(ang) * rad, path.y + Math.sin(ang) * rad, zPos);
-		fog.lookAt(path.x, path.y, zPos + 1);
-		fog.userData.offset = Math.random() * 6.28;
-		scene.add(fog);
-		tunnelFog.push(fog);
-		tunnelFogMat.push(fogMat);
-	}
 
-	// Phase 0 Rivalry
-	const circleGlowU: GlowUniforms = { uCol: new THREE.Uniform(new THREE.Color(0.9, 0.75, 0.2)), uPulse: new THREE.Uniform(1.0) };
-	const circleSymbol = new THREE.Mesh(
-		new THREE.RingGeometry(0.7, 1.1, 64),
-		new THREE.ShaderMaterial({ vertexShader: frVert, fragmentShader: glowFrag, uniforms: circleGlowU as any, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-	);
-	circleSymbol.layers.set(1); circleSymbol.visible = false; scene.add(circleSymbol);
-
-	const triPts = new Float32Array([1.1,0,0, -0.55,0.95,0, -0.55,-0.95,0]);
-	const triGeo = new THREE.BufferGeometry(); triGeo.setAttribute("position", new THREE.Float32BufferAttribute(triPts, 3));
-	triGeo.setAttribute("normal", new THREE.Float32BufferAttribute([0,0,1, 0,0,1, 0,0,1], 3)); triGeo.setIndex([0, 1, 2]);
-	const triangleGlowU: GlowUniforms = { uCol: new THREE.Uniform(new THREE.Color(0.3, 0.7, 1.0)), uPulse: new THREE.Uniform(1.0) };
-	const triangleSymbol = new THREE.Mesh(
-		triGeo, new THREE.ShaderMaterial({ vertexShader: frVert, fragmentShader: glowFrag, uniforms: triangleGlowU as any, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-	);
-	triangleSymbol.layers.set(2); triangleSymbol.visible = false; scene.add(triangleSymbol);
+	// Load 3D door model
+	const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+	const gltfLoader = new GLTFLoader();
+	const doorUrl = new URL("./3d models/scene.gltf", import.meta.url).toString();
+	const gltf = await gltfLoader.loadAsync(doorUrl);
+	const doorModel = gltf.scene;
+	if (!doorModel) throw new Error("Door model failed to load: scene.gltf");
+	const rawBox = new THREE.Box3().setFromObject(doorModel);
+	const rawSize = rawBox.getSize(new THREE.Vector3());
+	if (rawSize.y <= 0.0001) throw new Error("Door model has invalid bounds");
+	const targetDoorHeight = 6.0;
+	const doorScale = targetDoorHeight / rawSize.y;
+	doorModel.scale.setScalar(doorScale);
+	const fittedBox = new THREE.Box3().setFromObject(doorModel);
+	const fittedCenter = fittedBox.getCenter(new THREE.Vector3());
+	doorModel.position.x -= fittedCenter.x;
+	doorModel.position.z -= fittedCenter.z;
+	doorModel.position.y -= fittedBox.min.y;
 
 	// Phase 5 Rivalry (The Escape Doors)
-	const closedDoor = new THREE.Mesh(
-		new THREE.BoxGeometry(4, 6, 0.5),
-		new THREE.MeshBasicMaterial({ color: 0xffaa00, wireframe: true })
-	);
+	const closedDoor = doorModel.clone();
+	closedDoor.traverse((child) => {
+		if (child instanceof THREE.Mesh) {
+			const mat = new THREE.MeshStandardMaterial({
+				color: 0x0a0d1e,
+				emissive: new THREE.Color(0x58a6ff),
+				emissiveIntensity: 6.0,
+				metalness: 0.05,
+				roughness: 0.38,
+				transparent: true,
+				opacity: 0.9,
+			});
+			mat.map = null;
+			mat.emissiveMap = null;
+			child.material = mat;
+		}
+	});
 	closedDoor.visible = false; scene.add(closedDoor);
 
-	const openDoor = new THREE.Mesh(
-		new THREE.BoxGeometry(4, 6, 0.5),
-		new THREE.MeshBasicMaterial({ color: 0x111111, wireframe: false, transparent: true, opacity: 0.5 })
-	);
+	const openDoor = doorModel.clone();
+	openDoor.traverse((child) => {
+		if (child instanceof THREE.Mesh) {
+			const mat = new THREE.MeshStandardMaterial({
+				color: 0x120a1e,
+				emissive: new THREE.Color(0xff6ec7),
+				emissiveIntensity: 6.0,
+				metalness: 0.05,
+				roughness: 0.38,
+				transparent: true,
+				opacity: 0.85,
+			});
+			mat.map = null;
+			mat.emissiveMap = null;
+			child.material = mat;
+		}
+	});
 	openDoor.visible = false; scene.add(openDoor);
+
+	const closedDoorOutline = doorModel.clone();
+	closedDoorOutline.traverse((child) => {
+		if (child instanceof THREE.Mesh) {
+			child.material = new THREE.MeshBasicMaterial({
+				color: 0x8cc9ff,
+				transparent: true,
+				opacity: 0.65,
+				side: THREE.BackSide,
+			});
+		}
+	});
+	closedDoorOutline.scale.multiplyScalar(1.03);
+	closedDoorOutline.visible = false;
+	scene.add(closedDoorOutline);
+
+	const openDoorOutline = doorModel.clone();
+	openDoorOutline.traverse((child) => {
+		if (child instanceof THREE.Mesh) {
+			child.material = new THREE.MeshBasicMaterial({
+				color: 0xff93dc,
+				transparent: true,
+				opacity: 0.65,
+				side: THREE.BackSide,
+			});
+		}
+	});
+	openDoorOutline.scale.multiplyScalar(1.03);
+	openDoorOutline.visible = false;
+	scene.add(openDoorOutline);
+
+	const escapeStarU: GlowUniforms = {
+		uCol: new THREE.Uniform(new THREE.Color(1.0, 0.97, 0.92)),
+		uPulse: new THREE.Uniform(1.0),
+	};
+	const escapeStar = new THREE.Mesh(
+		new THREE.SphereGeometry(0.45, 24, 16),
+		new THREE.ShaderMaterial({
+			vertexShader: frVert,
+			fragmentShader: glowFrag,
+			uniforms: escapeStarU as any,
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			side: THREE.DoubleSide,
+		}),
+	);
+	escapeStar.visible = false;
+	scene.add(escapeStar);
 
 	// Environment
 	const cageU: CageUniforms = { uTime: new THREE.Uniform(0.0), uInten: new THREE.Uniform(0.0), uCol: new THREE.Uniform(new THREE.Color(0x1a3acc)) };
@@ -509,24 +688,12 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 	);
 	cageMesh.visible = false; scene.add(cageMesh);
 
-	const stars = createStarField(5500, CAGE_R + 1, 80, CAGE_LEN, (r) => r < 0.5 ? [0.72, 0.82, 1.0] : r < 0.82 ? [0.96, 0.96, 1.0] : [0.88, 0.92, 1.0], [0.28, 2.2]); scene.add(stars);
-	const nebula = createStarField(900, 8, CAGE_R - 1, CAGE_LEN, (r) => r < 0.5 ? [0.06, 0.12, 0.48] : [0.22, 0.04, 0.42], [0.9, 3.5]); scene.add(nebula);
+    // INCREASED to 15,000 for extreme suction phase
+	const stars = createStarField(15000, CAGE_R + 1, 80, CAGE_LEN, (r) => r < 0.5 ? [0.72, 0.82, 1.0] : r < 0.8 ? [0.96, 0.96, 0.99] : [1.0, 0.88, 0.62], [0.28, 2.2]); scene.add(stars);
+	const nebula = createStarField(5000, 8, CAGE_R - 1, CAGE_LEN, (r) => r < 0.5 ? [0.06, 0.18, 0.42] : [0.22, 0.04, 0.32], [0.9, 3.5]); scene.add(nebula);
 
 	const trails: TrailObject[] = Array.from({ length: TRAIL_N }, (_, i) => new TrailObject(i));
 	for (const t of trails) t.addToScene(scene);
-
-	const gpRel: THREE.Vector3[] = [];
-	for (let i = 0; i <= 400; i++) {
-		const t = i / 400; const z = 4 + t * 160;
-		gpRel.push(new THREE.Vector3(Math.sin(t * 6.8 + 0.4) * 2.6 + Math.cos(t * 14 + 1.1) * 1.1 + Math.sin(t * 3.2) * 1.8, Math.cos(t * 5.3 + 0.8) * 2.0 + Math.sin(t * 9.2 + 0.5) * 1.2 + Math.cos(t * 2.1) * 1.4, z));
-	}
-	const gpSamp = new THREE.CatmullRomCurve3(gpRel).getPoints(GP_N);
-	const gpPA = new Float32Array(GP_N * 3), gpCA = new Float32Array(GP_N * 3), gpSA = new Float32Array(GP_N);
-	for (let i = 0; i < GP_N; i++) { gpCA[i * 3] = 1.0; gpCA[i * 3 + 1] = 0.82; gpCA[i * 3 + 2] = 0.18; gpSA[i] = 0.35 + Math.random() * 0.4; }
-	const gpGeo = new THREE.BufferGeometry();
-	gpGeo.setAttribute("position", new THREE.Float32BufferAttribute(gpPA, 3)); gpGeo.setAttribute("aCol", new THREE.Float32BufferAttribute(gpCA, 3)); gpGeo.setAttribute("aSz", new THREE.Float32BufferAttribute(gpSA, 1));
-	const gpMesh = new THREE.Points(gpGeo, new THREE.ShaderMaterial({ vertexShader: particleVert, fragmentShader: particleFrag, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-	gpMesh.visible = false; scene.add(gpMesh);
 
 	const threatGlowU: GlowUniforms[] = [];
 	const threats: THREE.Mesh[] = Array.from({ length: 8 }, (_, i) => {
@@ -535,20 +702,98 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 		m.userData = { spd: 0.35 + Math.random() * 0.65, rad: 2.2 + Math.random() * 2.8, ph: Math.random() * Math.PI * 2, off: 14 + i * 18 }; m.visible = false; scene.add(m); return m;
 	});
 
-	const _onResize = () => { composer.setSize(window.innerWidth, window.innerHeight); }; window.addEventListener("resize", _onResize);
+	const _onResize = () => { composer.setSize(window.innerWidth, window.innerHeight); };
+	window.addEventListener("resize", _onResize);
+
+	const debugInput = { pitch: 0, roll: 0, accel: false, brake: false, active: false, phase: null as number | null };
+	
+	const _onKeyDown = (e: KeyboardEvent) => {
+		const key = e.key.toLowerCase();
+		if (stateRef) stateRef.keys.add(key);
+		
+		switch (e.code) {
+			case "KeyW":
+			case "ArrowUp":
+				debugInput.pitch = -25;
+				debugInput.active = true;
+				break;
+			case "KeyS":
+			case "ArrowDown":
+				debugInput.pitch = 25;
+				debugInput.active = true;
+				break;
+			case "KeyA":
+			case "ArrowLeft":
+				debugInput.roll = 0;
+				break;
+			case "KeyD":
+			case "ArrowRight":
+				debugInput.roll = 0;
+				break;
+			case "Space":
+				debugInput.accel = true;
+				debugInput.active = true;
+				break;
+			case "Digit1":
+				debugInput.phase = 1; 
+				break;
+			case "Digit2":
+				debugInput.phase = 2; 
+				break;
+			case "Digit3":
+				debugInput.phase = 3; 
+				break;
+		}
+	};
+	const _onKeyUp = (e: KeyboardEvent) => {
+		const key = e.key.toLowerCase();
+		if (stateRef) stateRef.keys.delete(key);
+		
+		switch (e.code) {
+			case "KeyW":
+			case "ArrowUp":
+			case "KeyS":
+			case "ArrowDown":
+				debugInput.pitch = 0;
+				break;
+			case "KeyA":
+			case "ArrowLeft":
+			case "KeyD":
+			case "ArrowRight":
+				debugInput.roll = 0;
+				break;
+			case "Space":
+				debugInput.accel = false;
+				break;
+		}
+	};
+	window.addEventListener("keydown", _onKeyDown);
+	window.addEventListener("keyup", _onKeyUp);
+	window.addEventListener("mousemove", _onMouseMove);
 	renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.6;
 
-	return {
+	const state = {
 		scene, renderer, camera, phase: 0, phaseT: 0, camZ: -2, camPos: new THREE.Vector3(0, 0, -2), heading: 0, lateralX: 0, currentSpeed: 0,
 		delayedPitch: 0, delayedRoll: 0, tunnelSpeed: 0.28, baseSpeed: 5, phaseDuration: 60, bendSpeed: 0.005,
 		orientation: { pitch: 0, roll: 0 }, speed: { accelerate: false, brake: false }, dominantEye: null,
+		keys: new Set<string>(),
+		moveVel: new THREE.Vector3(0, 0, 0),
+		lookYaw: 0,
+		lookPitch: 0,
 		postfxComposer: composer, postfxRender, blesserEffect, postfxDeltaRef, postCA: 0.14, postWarp: 0, postFlick: 0, hbPulse: 0, tunnelReveal: 0,
 		tunnelMesh, tunnelU, tunnelLight, tunnelHalo, tunnelHaloU,
 		tunnelCurve, tunnelFrames, tunnelProgress: 0,
 		tunnelParticles, tunnelParticleMat, tunnelFog, tunnelFogMat,
-		circleSymbol, triangleSymbol, circleGlowU, triangleGlowU, closedDoor, openDoor,
-		cageMesh, cageU, stars, nebula, trails, trailSc: 1, gpMesh, gpGeo, gpSamp, threats, threatGlowU, _onResize,
+		colorTex, aoTex, heightTex, normalTex,
+		closedDoor, openDoor, closedDoorOutline, openDoorOutline, escapeStar, escapeStarU,
+		room, roomLightL, roomLightR, roomBackLight,
+		cageMesh, cageU, stars, nebula, trails, trailSc: 1, threats, threatGlowU, _onResize,
+		debugInput,
+		_onKeyDown, _onKeyUp, _onMouseMove,
 	};
+	
+	stateRef = state;
+	return state;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -557,212 +802,386 @@ export async function setup(ctx: SetupContext): Promise<B4LesserState> {
 const _tmpColor = new THREE.Color();
 
 export function tick(state: ExperienceState, ctx: TickContext): { state: ExperienceState } {
-	const s = state as B4LesserState;
-	const { delta, elapsed } = ctx;
+    const s = state as B4LesserState;
+    const { delta, elapsed } = ctx;
 
-	s.phaseT += delta;
-	s.postfxDeltaRef.value = delta;
-	const L = Math.min(1, delta * 1.5);
+    s.phaseT += delta;
+    s.postfxDeltaRef.value = delta;
+    const L = Math.min(1, delta * 1.5);
 
-	// ── Post-FX Progression ──
-	let tCA = 0.14, tWarp = 0.0, tFlick = 0.0;
-	if (s.phase === 0) {
-		// Pull-in from void: strong CA + warp ramp for suction effect
-		const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.3, 4.5);
-		tCA = 0.2 + pull * 1.2;
-		tWarp = pull * 1.1;
-	} else if (s.phase === 1) { tCA = 0.28; tWarp = 0.0; }
-	else if (s.phase === 2) { tCA = 0.52 + Math.min(s.phaseT / 30, 1) * 0.48; tWarp = Math.min(s.phaseT / 30, 0.75); }
+    // ── Post-FX Progression ──
+    let tCA = 0.14, tWarp = 0.0, tFlick = 0.0;
+    let tScan = 0.0, tVhs = 0.0, tGlitch = 0.0, tWhiteout = 0.0;
+    
+    if (s.phase === 0) {
+        const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.4, 5.2);
+        const depth = s.tunnelProgress;
+        tCA = 0.18 + pull * 1.35 + depth * 0.35;
+        tWarp = 0.1 + pull * 1.45 + depth * 0.6;
+        tScan = 0.22 + pull * 0.35;
+        tVhs = 0.2 + pull * 0.25;
+        tGlitch = 0.3 + pull * 0.35;
+    } else if (s.phase === 1) {
+        // EXTREME SUCTION OVERRIDE
+        tCA = 3.5; 
+        tWarp = 0.95 + Math.sin(elapsed * 1.5) * 0.45; 
+        tScan = 0.0;
+        tVhs = 0.0;
+        tGlitch = 0.0;
+    } else if (s.phase === 2) {
+        tCA = 0.12;
+        tWarp = 0.0; 
+        tScan = 0.18;
+        tVhs = 0.12;
+        tGlitch = 0.25;
+    } else if (s.phase === 3) {
+        const swallow = Math.min(1.0, s.phaseT / 3.0);
+        tCA = 2.5 + swallow * 4.0; 
+        tWarp = 1.8 + swallow * 2.5;  
+        tScan = 0.4 + swallow * 0.8;
+        tVhs = 0.2 + swallow * 0.6;
+        tGlitch = 0.15 + swallow * 0.4;
+        tWhiteout = THREE.MathUtils.smoothstep(swallow, 0.5, 1.0); 
+    }
 
-	s.postCA += (tCA - s.postCA) * L;
-	s.postWarp += (tWarp - s.postWarp) * L * 0.55;
-	s.postFlick += (tFlick - s.postFlick) * L;
+    s.postCA += (tCA - s.postCA) * L;
+    
+    const warpLerp = s.phase === 1 ? L * 3.0 : L * 0.55;
+    s.postWarp += (tWarp - s.postWarp) * warpLerp;
+    
+    s.postFlick += (tFlick - s.postFlick) * L;
 
-	const hbRaw = Math.pow(Math.max(0, Math.sin(elapsed * Math.PI * 1.15 - 0.2)), 10.0);
-	s.hbPulse += (hbRaw - s.hbPulse) * Math.min(1, delta * 18);
-	s.blesserEffect.setCA(s.postCA); s.blesserEffect.setWarp(s.postWarp); s.blesserEffect.setFlicker(s.postFlick); s.blesserEffect.setTime(elapsed * 100);
-	s.blesserEffect.setHeartbeat(s.phase === 0 ? s.hbPulse * Math.max(0, 1.2 - s.tunnelReveal * 2.0) : 0);
+    const hbRaw = Math.pow(Math.max(0, Math.sin(elapsed * Math.PI * 1.15 - 0.2)), 10.0);
+    s.hbPulse += (hbRaw - s.hbPulse) * Math.min(1, delta * 18);
+    
+    s.blesserEffect.setCA(s.postCA); 
+    s.blesserEffect.setWarp(s.postWarp); 
+    s.blesserEffect.setFlicker(s.postFlick); 
+    s.blesserEffect.setTime(elapsed * 100);
+    s.blesserEffect.setScan(tScan); 
+    s.blesserEffect.setVhs(tVhs); 
+    s.blesserEffect.setGlitch(tGlitch);
+    
+    const domEye = s.dominantEye !== "left" ? 1 : 0;
+    s.blesserEffect.setDomEye(domEye);
+    s.blesserEffect.setNonDomVig(s.phase === 2 && s.renderer.xr.isPresenting ? 0.12 : 0.0);
+    s.blesserEffect.setWhiteout(tWhiteout);
+    s.blesserEffect.setHeartbeat(s.phase === 0 ? s.hbPulse * Math.max(0, 1.2 - s.tunnelReveal * 2.0) : 0);
 
-	// ── Fog ──
-	const fogTargets = [
-		{ density: 0.014, hex: 0x05000c }, { density: 0.005, hex: 0x010316 }, { density: 0.004, hex: 0x010218 },
-	];
-	const ft = fogTargets[s.phase] ?? fogTargets[0];
-	const fog = s.scene.fog as THREE.FogExp2;
-	_tmpColor.setHex(ft.hex); fog.color.lerp(_tmpColor, delta * 0.5); fog.density += (ft.density - fog.density) * delta * 0.8;
+    const fogTargets = [
+        { density: 0.014, hex: 0x05000c }, { density: 0.005, hex: 0x010316 }, { density: 0.004, hex: 0x010218 },
+    ];
+    const ft = fogTargets[s.phase] ?? fogTargets[0];
+    const fog = s.scene.fog as THREE.FogExp2;
+    _tmpColor.setHex(ft.hex); 
+    fog.color.lerp(_tmpColor, delta * 0.5); 
+    fog.density += (ft.density - fog.density) * delta * 0.8;
 
-	// ── Camera & Agency ──
-	const { pitch, roll } = s.orientation;
-	const { accelerate, brake } = s.speed;
-	let bobX = Math.sin(elapsed * 0.43) * 0.22;
-	let bobY = Math.cos(elapsed * 0.37) * 0.28;
+    let pitch = s.orientation.pitch;
+    let roll = s.orientation.roll;
+    let accelerate = s.speed.accelerate;
+    let brake = s.speed.brake;
 
-	const targetSpd = s.baseSpeed * (accelerate ? 2.0 : brake ? 0.3 : 1.0);
+    if (s.debugInput.active && Math.abs(pitch) + Math.abs(roll) < 0.01) {
+        pitch = s.debugInput.pitch;
+        roll = s.debugInput.roll;
+        accelerate = s.debugInput.accel;
+        brake = s.debugInput.brake;
+    }
+    if (s.debugInput.phase !== null) {
+        const p = s.debugInput.phase;
+        s.debugInput.phase = null;
+        s.phase = p;
+        s.phaseT = 0;
+        if (p === 0) {
+            s.tunnelProgress = 0;
+            s.camPos.set(0, 0, -2);
+            s.camZ = -2;
+        } else if (p === 1) {
+            s.camPos.set(0, 0, 0);
+            s.camZ = 0;
+        } else if (p === 2) {
+            s.camPos.set(0, 0, 0);
+            s.camZ = 0;
+        }
+    }
+    
+    function applyMovement(s: B4LesserState, delta: number): void {
+        if (s.phase !== 0) return; 
 
-	if (s.phase === 0) {
-		s.tunnelProgress = Math.min(1, s.tunnelProgress + (s.tunnelSpeed * delta) / TUNNEL_LEN);
-		const t = Math.min(0.999, Math.max(0.001, s.tunnelProgress));
-		const cp = s.tunnelCurve.getPointAt(t);
-		const next = s.tunnelCurve.getPointAt(Math.min(0.999, t + 0.006));
-		const fi = Math.min(s.tunnelFrames.normals.length - 1, Math.floor(t * s.tunnelFrames.normals.length));
-		const n = s.tunnelFrames.normals[fi];
-		const b = s.tunnelFrames.binormals[fi];
-		const lateral = roll * 1.7;
-		const offset = new THREE.Vector3()
-			.addScaledVector(n, Math.cos(elapsed * 0.2) * lateral)
-			.addScaledVector(b, Math.sin(elapsed * 0.2) * lateral * 0.7);
+        const baseSpeed = s.keys.has("shift") ? 24 : 10;
+        const accel = 18.0;
+        const damping = 0.88;
 
-		const targetPos = cp.clone().add(offset);
-		s.camera.position.lerp(targetPos, 0.18);
+        const input = new THREE.Vector3(0, 0, 0);
+        // FIXED: W pushes you forward, S pulls you back
+        if (s.keys.has("w")) input.z += 1;
+        if (s.keys.has("s")) input.z -= 1;
+        if (input.lengthSq() > 0) input.normalize();
 
-		// Gentle twist only late in the tunnel
-		const twistAmount = s.tunnelProgress < 0.35 ? 0.0 : 0.15;
-		const twist = Math.sin(elapsed * 0.5 + t * 6.0) * twistAmount;
-		const up = n.clone().multiplyScalar(Math.cos(twist)).add(b.clone().multiplyScalar(Math.sin(twist)));
-		s.camera.up.copy(up);
-		s.camera.lookAt(next);
-		s.camZ = s.camera.position.z;
+        s.moveVel.addScaledVector(input, accel * delta * baseSpeed);
+        s.moveVel.multiplyScalar(damping);
 
-		// FOV pulse for suction feel, then ease back
-		const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.3, 4.5);
-		const fovTarget = 86 + pull * 24;
-		s.camera.fov += (fovTarget - s.camera.fov) * delta * 2.2;
-		s.camera.updateProjectionMatrix();
+        // FIXED: Locked mouse look Euler order to YXZ to stop camera roll
+        const euler = new THREE.Euler(s.lookPitch, s.lookYaw, 0, 'YXZ');
+        const forward = new THREE.Vector3(0, 0, -1).applyEuler(euler);
+        s.camera.position.addScaledVector(forward, s.moveVel.z * delta);
+        s.camera.lookAt(s.camera.position.clone().add(forward));
 
-		s.renderer.toneMappingExposure += (1.1 - s.renderer.toneMappingExposure) * delta * 0.5;
+        const z = s.camera.position.z;
+        const t = Math.max(0.01, Math.min(0.99, -z / TUNNEL_LEN));
+        const cp = s.tunnelCurve.getPointAt(t);
 
-		if (s.tunnelProgress >= 1) {
-			s.dominantEye = lateral < 0 ? "left" : "right";
-			s.phase = 1; s.phaseT = 0; s.camPos.copy(s.camera.position);
-		}
-	} else if (s.phase >= 1 && s.phase <= 2) {
-		const DEG2RAD = Math.PI / 180;
-		let sysInf = s.phase === 2 ? Math.min(1, s.phaseT / 30) : 0;
-		const forcedRoll = Math.sin(elapsed * 0.08) * 15 * sysInf;
-		const blendRoll = roll * (1 - sysInf * 0.8) + forcedRoll;
-		const blendPitch = pitch * (1 - sysInf * 0.5);
+        s.camera.position.x += (cp.x - s.camera.position.x) * 0.03;
+        s.camera.position.y += (cp.y - s.camera.position.y) * 0.03;
 
-		s.heading -= blendRoll * (DEG2RAD * 1.5) * delta;
-		s.currentSpeed += (targetSpd - s.currentSpeed) * delta * 1.2;
-		s.camPos.x += Math.sin(s.heading) * s.currentSpeed * delta;
-		s.camPos.z += Math.cos(s.heading) * s.currentSpeed * delta;
-		s.camPos.y -= blendPitch * DEG2RAD * s.currentSpeed * 0.5 * delta;
-		s.camZ = s.camPos.z;
+        const dx = s.camera.position.x - cp.x;
+        const dy = s.camera.position.y - cp.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxRadius = 5.5;
+        if (dist > maxRadius) {
+            const pushX = cp.x + (dx / dist) * maxRadius;
+            const pushY = cp.y + (dy / dist) * maxRadius;
+            s.camera.position.x = pushX;
+            s.camera.position.y = pushY;
+        }
 
-		const wPull = s.phase === 2 ? s.postWarp * Math.sin(elapsed * 0.55) * 3.8 : 0;
-		s.camera.position.set(s.camPos.x + bobX, s.camPos.y + bobY, s.camPos.z);
-		s.camera.lookAt(s.camPos.x + Math.sin(s.heading) * 22 + wPull, s.camPos.y + blendPitch * 9 + bobY * 2, s.camPos.z + Math.cos(s.heading) * 22);
+        s.camera.position.z = THREE.MathUtils.clamp(s.camera.position.z, -TUNNEL_LEN, 0);
+        s.camZ = s.camera.position.z;
+        s.camPos.copy(s.camera.position);
+    }
+    
+    applyMovement(s, delta);
+    
+    let bobX = Math.sin(elapsed * 0.43) * 0.22;
+    let bobY = Math.cos(elapsed * 0.37) * 0.28;
 
-		const tFov = 86 + (s.phase === 2 ? s.postWarp * 35 : 0);
-		s.camera.fov += (tFov - s.camera.fov) * delta * 1.8;
-		s.camera.updateProjectionMatrix();
+    const targetSpd = s.baseSpeed * (accelerate ? 2.0 : brake ? 0.3 : 1.0);
 
-		if (s.phase === 1 && s.phaseT >= s.phaseDuration) { s.phase = 2; s.phaseT = 0; }
-	}
+    if (s.phase === 0) {
+        const z = s.camera.position.z;
+        s.tunnelProgress = Math.min(1, Math.max(0, -z / TUNNEL_LEN));
+        const lateral = roll * 1.7;
 
-	// ── Geometry Visibility & Updates ──
-	const showTunnel = s.phase === 0 || (s.phase === 1 && s.phaseT < 1.2);
-	s.tunnelMesh.visible = showTunnel;
-	s.tunnelHalo.visible = showTunnel;
-	s.tunnelParticles.visible = showTunnel;
-	for (const fog of s.tunnelFog) fog.visible = showTunnel;
-	if (showTunnel) {
-		if (s.phase === 0) {
-			// Emergence: black → sparkles → canal glow (few seconds, smooth)
-			const sparkle = THREE.MathUtils.smoothstep(s.phaseT, 0.2, 3.0);
-			const canal = THREE.MathUtils.smoothstep(s.phaseT, 2.2, 5.2);
-			s.tunnelReveal = canal;
-			s.tunnelParticleMat.opacity = 0.06 + sparkle * 0.95;
-			for (const fog of s.tunnelFog) {
-				const mat = fog.material as THREE.Material;
-				mat.opacity = 0.08 + canal * 0.5;
-			}
-			// Keep tunnel visible but near-black; glow ramps in
-			s.tunnelMesh.visible = true;
-		} else {
-			s.tunnelReveal = Math.max(0, s.tunnelReveal - delta * 1.8);
-			s.tunnelParticleMat.opacity = Math.max(0, s.tunnelParticleMat.opacity - delta * 1.2);
-		}
-		s.tunnelU.uTime.value = elapsed;
-		s.tunnelU.uGlowIntensity.value = 0.08 + s.tunnelReveal * 1.35;
-		s.tunnelU.uWaveAmp.value = 0.18 + s.tunnelReveal * 0.55;
-		s.tunnelU.uPulse.value = (Math.sin(elapsed * 0.8) * 0.5 + 0.5) * (0.18 + s.tunnelReveal * 0.35);
-		s.tunnelLight.position.copy(s.camera.position);
-		s.tunnelParticleMat.uniforms.uTime.value = elapsed;
-		for (let i = 0; i < s.tunnelFog.length; i++) {
-			const fogMat = s.tunnelFogMat[i];
-			fogMat.uniforms.uTime.value = elapsed + (s.tunnelFog[i].userData.offset as number);
-		}
+        const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.4, 5.2);
+        const fovTarget = 86 + pull * 24;
+        s.camera.fov += (fovTarget - s.camera.fov) * delta * 2.2;
+        s.camera.updateProjectionMatrix();
 
-		s.tunnelHaloU.uTime.value = elapsed;
-		s.tunnelHaloU.uDrift.value = 0.12 + Math.sin(elapsed * 0.3) * 0.03;
-		s.tunnelHaloU.uIntensity.value = 0.02 + s.tunnelReveal * 0.35;
-	}
+        s.renderer.toneMappingExposure += (1.1 - s.renderer.toneMappingExposure) * delta * 0.5;
 
-	const showRivals = s.phase === 0 && s.tunnelProgress > 0.85;
-	s.circleSymbol.visible = showRivals; s.triangleSymbol.visible = showRivals;
-	if (showRivals) {
-		const endPos = s.tunnelCurve.getPointAt(0.999);
-		const endT = s.tunnelCurve.getTangentAt(0.999);
-		const symPos = endPos.clone().addScaledVector(endT, 2.0);
-		s.circleSymbol.position.copy(symPos);
-		s.triangleSymbol.position.copy(symPos);
-		s.circleSymbol.lookAt(s.camera.position);
-		s.triangleSymbol.lookAt(s.camera.position);
-		const pw = Math.sin(elapsed * 2.9) * 0.5 + 0.5;
-		s.circleGlowU.uPulse.value = 0.4 + pw * 0.6;
-		s.triangleGlowU.uPulse.value = 0.4 + (1 - pw) * 0.6;
-	}
+        if (s.tunnelProgress >= 1) {
+            s.dominantEye = lateral < 0 ? "left" : "right";
+            s.phase = 1; s.phaseT = 0; s.camPos.copy(s.camera.position);
+        }
+    } else if (s.phase === 1) {
+        s.camera.position.set(0, 0, 0);
+        s.camera.lookAt(0, 0, -1); 
+        
+        // Massive speed boost for the suction effect
+        const starSpeed = 350 * delta;
+        [s.stars, s.nebula].forEach(mesh => {
+            if (mesh && mesh.visible) {
+                const positions = mesh.geometry.attributes.position.array as Float32Array;
+                for (let i = 0; i < positions.length / 3; i++) {
+                    positions[i * 3 + 2] += starSpeed;
+                    if (positions[i * 3 + 2] > 10) {
+                        positions[i * 3 + 2] -= 400; 
+                    }
+                }
+                mesh.geometry.attributes.position.needsUpdate = true;
+            }
+        });
+        
+        s.tunnelReveal = 0.0;
+        
+        if (s.phaseT >= 8.0) {
+            s.phase = 2; s.phaseT = 0;
+            s.camera.fov = 86;
+            s.camPos.set(0, 0, 0);
+            s.camZ = 0;
+        }
+    } else if (s.phase === 2) {
+        const DEG2RAD = Math.PI / 180;
+        let sysInf = s.phase === 2 ? Math.min(1, s.phaseT / 30) : 0;
+        const forcedRoll = Math.sin(elapsed * 0.08) * 15 * sysInf;
+        const blendRoll = roll * (1 - sysInf * 0.8) + forcedRoll;
+        const blendPitch = pitch * (1 - sysInf * 0.5);
 
-	if (showRivals) {
-		if (s.renderer.xr.isPresenting) {
-			const xrCam = s.renderer.xr.getCamera() as THREE.ArrayCamera;
-			if (xrCam.cameras && xrCam.cameras.length === 2) {
-				const left = xrCam.cameras[0], right = xrCam.cameras[1];
-				left.layers.enable(0); left.layers.enable(1); left.layers.disable(2);
-				right.layers.enable(0); right.layers.disable(1); right.layers.enable(2);
-			}
-		} else { s.camera.layers.enableAll(); }
-	} else if (!s.renderer.xr.isPresenting) { s.camera.layers.enable(0); }
+        s.heading -= blendRoll * (DEG2RAD * 1.5) * delta;
+        s.currentSpeed += (targetSpd - s.currentSpeed) * delta * 1.2;
+        s.camPos.x += Math.sin(s.heading) * s.currentSpeed * delta;
+        s.camPos.z += Math.cos(s.heading) * s.currentSpeed * delta;
+        s.camPos.y -= blendPitch * DEG2RAD * s.currentSpeed * 0.5 * delta;
+        s.camZ = s.camPos.z;
 
-	const showCage = s.phase >= 1 && s.phase <= 2;
-	s.cageMesh.visible = showCage; s.stars.visible = showCage; s.nebula.visible = showCage;
-	if (showCage) {
-		s.cageMesh.position.set(0, 0, s.camZ - 80); s.cageU.uTime.value = elapsed;
-		s.stars.position.set(0, 0, s.camZ - 50); s.nebula.position.set(0, 0, s.camZ - 50);
-		(s.stars.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
-		(s.nebula.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
-	}
+        const wPull = s.phase === 2 ? s.postWarp * Math.sin(elapsed * 0.55) * 3.8 : 0;
+        const phase2Pos = new THREE.Vector3(s.camPos.x + bobX, s.camPos.y + bobY, s.camPos.z);
+        s.camera.position.copy(phase2Pos);
+        s.camera.lookAt(phase2Pos.x + Math.sin(s.heading) * 22 + wPull, phase2Pos.y + blendPitch * 9 + bobY * 2, phase2Pos.z + Math.cos(s.heading) * 22);
 
-	const trailScTarget = s.phase === 2 ? 1.5 + Math.sin(elapsed * 1.9) * 0.5 : 1.0;
-	s.trailSc += (trailScTarget - s.trailSc) * L;
-	const showTrails = s.phase >= 1 && s.phase <= 2;
-	for (const tr of s.trails) {
-		if (showTrails) tr.update(elapsed, s.camZ, true, s.trailSc);
-		else tr.hide();
-	}
+        const tFov = 86 + (s.phase === 2 ? s.postWarp * 35 : 0);
+        s.camera.fov += (tFov - s.camera.fov) * delta * 1.8;
+        s.camera.updateProjectionMatrix();
+    } else if (s.phase === 3) {
+        const swallowProgress = Math.min(1.0, s.phaseT / 3.0);
+        
+        const dominant = s.dominantEye ?? "right";
+        const doorPos = new THREE.Vector3(dominant === "right" ? 6 : -6, 0, 42);
+        const throughDoor = doorPos.clone().add(new THREE.Vector3(0, 0, 8 + swallowProgress * 20));
+        
+        const pullSpeed = 2.5 + swallowProgress * swallowProgress * 10; 
+        s.camPos.lerp(throughDoor, Math.min(1, delta * pullSpeed));
+        s.camera.position.copy(s.camPos);
+        s.camera.lookAt(throughDoor.x, throughDoor.y, throughDoor.z + 10);
+        
+        const fovTarget = 86 + swallowProgress * 40;
+        s.camera.fov += (fovTarget - s.camera.fov) * delta * 6;
+        s.camera.updateProjectionMatrix();
+        
+        s.camZ = s.camera.position.z;
+    }
 
-	s.gpMesh.visible = showTrails;
-	if (s.gpMesh.visible) {
-		const pa = s.gpGeo.attributes.position.array as Float32Array;
-		for (let i = 0; i < GP_N; i++) {
-			pa[i * 3] = s.gpSamp[i].x; pa[i * 3 + 1] = s.gpSamp[i].y; pa[i * 3 + 2] = s.gpSamp[i].z + s.camZ;
-		}
-		s.gpGeo.attributes.position.needsUpdate = true;
-	}
+// ── Geometry Visibility & Updates ──
+const showTunnel = s.phase === 0;
+s.tunnelMesh.visible = showTunnel;
+s.tunnelHalo.visible = showTunnel;
+s.tunnelParticles.visible = showTunnel;
+for (const fog of s.tunnelFog) fog.visible = showTunnel;
+    if (showTunnel) {
+        if (s.phase === 0) {
+            const sparkle = THREE.MathUtils.smoothstep(s.phaseT, 0.05, 1.15);
+            const canal = THREE.MathUtils.smoothstep(s.phaseT, 0.35, 2.1);
+            s.tunnelReveal = canal;
+            s.tunnelParticleMat.opacity = 0.16 + sparkle * 1.15;
+            for (const fog of s.tunnelFog) {
+                const mat = fog.material as THREE.Material;
+                mat.opacity = 0.15 + canal * 0.65;
+            }
+            s.tunnelMesh.visible = true;
+        } else if (s.phase === 1) {
+            const pull = THREE.MathUtils.smoothstep(s.phaseT, 0.0, 2.0);
+            s.tunnelReveal = Math.max(0.0, 0.2 - pull * 0.3);
+            s.tunnelParticleMat.opacity = 0.0;
+        }
+    s.tunnelU.uTime.value = elapsed;
+    s.tunnelU.uGlowIntensity.value = 0.24 + s.tunnelReveal * 1.25;
+    s.tunnelU.uWaveAmp.value = 0.18 + s.tunnelReveal * 0.55;
+    s.tunnelU.uPulse.value = (Math.sin(elapsed * 0.8) * 0.5 + 0.5) * (0.18 + s.tunnelReveal * 0.35);
+    
+    s.tunnelLight.position.copy(s.camera.position);
+    s.tunnelParticleMat.uniforms.uTime.value = elapsed;
+    for (let i = 0; i < s.tunnelFog.length; i++) {
+        const fogMat = s.tunnelFogMat[i];
+        fogMat.uniforms.uTime.value = elapsed + (s.tunnelFog[i].userData.offset as number);
+    }
 
-	const showThreats = s.phase >= 1 && s.phase <= 2;
-	s.threats.forEach((t, i) => {
-		t.visible = showThreats;
-		if (showThreats) {
-			const d = t.userData as { spd: number; rad: number; ph: number; off: number };
-			const a = elapsed * d.spd + d.ph;
-			t.position.set(Math.cos(a) * d.rad, Math.sin(a * 1.38) * d.rad * 0.75, s.camZ + d.off);
-			s.threatGlowU[i].uPulse.value = 0.7 + Math.sin(elapsed * 3.5 + i) * 0.35;
-		}
-	});
+    s.tunnelHaloU.uTime.value = elapsed;
+    s.tunnelHaloU.uDrift.value = 0.12 + Math.sin(elapsed * 0.3) * 0.03;
+    s.tunnelHaloU.uIntensity.value = 0.02 + s.tunnelReveal * 0.35;
+    }
 
-	return { state: s };
+    if (s.phase === 2) {
+        if (s.renderer.xr.isPresenting) {
+            const xrCam = s.renderer.xr.getCamera() as THREE.ArrayCamera;
+            if (xrCam.cameras && xrCam.cameras.length === 2) {
+                const left = xrCam.cameras[0], right = xrCam.cameras[1];
+                left.layers.enable(0); left.layers.enable(1); left.layers.disable(2);
+                right.layers.enable(0); right.layers.disable(1); right.layers.enable(2);
+            }
+        } else { s.camera.layers.enableAll(); }
+    } else if (!s.renderer.xr.isPresenting) { s.camera.layers.enable(0); }
+
+const showCage = false;
+const showStars = s.phase === 1; 
+s.cageMesh.visible = showCage; 
+s.stars.visible = showStars; 
+s.nebula.visible = showStars;
+    if (showCage) {
+        s.cageMesh.position.set(0, 0, s.camZ - 80); s.cageU.uTime.value = elapsed;
+    }
+    if (showStars) {
+        s.stars.position.set(0, 0, 0); 
+        s.nebula.position.set(0, 0, 0);
+        (s.stars.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
+        (s.nebula.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
+    }
+
+    const trailScTarget = 1.0;
+    s.trailSc += (trailScTarget - s.trailSc) * L;
+    const showTrails = false;
+    for (const tr of s.trails) {
+        if (showTrails) tr.update(elapsed, s.camZ, true, s.trailSc);
+        else tr.hide();
+    }
+
+const showThreats = false;
+s.threats.forEach((t, i) => {
+        t.visible = showThreats;
+        if (showThreats) {
+            const d = t.userData as { spd: number; rad: number; ph: number; off: number };
+            const a = elapsed * d.spd + d.ph;
+            t.position.set(Math.cos(a) * d.rad, Math.sin(a * 1.38) * d.rad * 0.75, s.camZ + d.off);
+            s.threatGlowU[i].uPulse.value = 0.7 + Math.sin(elapsed * 3.5 + i) * 0.35;
+        }
+});
+
+// ── Room + doors (Phase 2) ─────────────────────────────────────
+const showRoom = s.phase === 2 || s.phase === 3;
+s.room.visible = showRoom;
+s.closedDoor.visible = showRoom;
+s.openDoor.visible = showRoom;
+s.closedDoorOutline.visible = showRoom;
+s.openDoorOutline.visible = showRoom;
+
+s.roomLightL.visible = showRoom;
+s.roomLightR.visible = showRoom;
+s.roomBackLight.visible = showRoom;
+s.escapeStar.visible = false;
+
+if (showRoom) {
+    s.room.position.set(0, 0, 20);
+    const doorZ = 20 + 22;
+    s.closedDoor.position.set(-6, 0, doorZ);
+    s.openDoor.position.set(6, 0, doorZ);
+    s.closedDoorOutline.position.copy(s.closedDoor.position);
+    s.openDoorOutline.position.copy(s.openDoor.position);
+    
+    const dominant = s.dominantEye ?? "right";
+    const domLayer = dominant === "left" ? 1 : 2;
+    const nonDomLayer = dominant === "left" ? 2 : 1;
+    
+    s.closedDoor.layers.set(domLayer);
+    s.openDoor.layers.set(nonDomLayer);
+    s.closedDoorOutline.layers.set(domLayer);
+    s.openDoorOutline.layers.set(nonDomLayer);
+    
+    if (s.phase === 2) {
+        let moveVector = new THREE.Vector3(0, 0, 0);
+        const roomSpeed = 6;
+        if (s.keys.has("w")) moveVector.z += roomSpeed * delta;
+        if (s.keys.has("s")) moveVector.z -= roomSpeed * delta;
+        
+        s.camPos.add(moveVector);
+        const mid = new THREE.Vector3(0, 0, doorZ - 5);
+        s.camPos.lerp(mid, delta * 0.25);
+        s.camera.position.copy(s.camPos);
+        
+        const doorPos = new THREE.Vector3((s.dominantEye === "right" ? 6 : -6), 0, doorZ);
+        if (s.phaseT > 7.0) {
+            const pullStrength = Math.min(1.0, (s.phaseT - 7.0) * 0.08);
+            const pullDir = doorPos.clone().sub(s.camera.position).normalize();
+            s.camPos.add(pullDir.multiplyScalar(pullStrength * 2.5 * delta));
+        }
+        
+        if (s.camera.position.distanceTo(doorPos) < 1.8) {
+            s.phase = 3;
+            s.phaseT = 0;
+        }
+    }
+}
+
+    return { state: s };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -772,13 +1191,33 @@ export function tick(state: ExperienceState, ctx: TickContext): { state: Experie
 export function dispose(state: ExperienceState, scene: THREE.Scene): void {
 	const s = state as B4LesserState;
 	window.removeEventListener("resize", s._onResize);
+	window.removeEventListener("keydown", s._onKeyDown);
+	window.removeEventListener("keyup", s._onKeyUp);
+	window.removeEventListener("mousemove", s._onMouseMove);
 	s.postfxComposer.dispose();
 
-	[s.tunnelMesh, s.tunnelHalo, s.tunnelParticles, s.circleSymbol, s.triangleSymbol, s.cageMesh, s.stars, s.nebula, s.gpMesh, s.closedDoor, s.openDoor].forEach(m => {
-		m.geometry.dispose(); (m.material as THREE.Material).dispose(); scene.remove(m);
-	});
-	scene.remove(s.tunnelLight); s.tunnelLight.dispose();
-	// tunnelAmbient is not stored; remove all ambient lights
+	const disposeObject = (obj: THREE.Object3D) => {
+		obj.traverse((child) => {
+			if (child instanceof THREE.Mesh) {
+				child.geometry.dispose();
+				if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+				else child.material.dispose();
+			}
+		});
+		scene.remove(obj);
+	};
+	[s.tunnelMesh, s.tunnelHalo, s.tunnelParticles, s.cageMesh, s.stars, s.nebula, s.closedDoor, s.openDoor, s.escapeStar, s.room].forEach(disposeObject);
+	
+    scene.remove(s.tunnelLight); s.tunnelLight.dispose();
+    scene.remove(s.roomLightL); s.roomLightL.dispose();
+    scene.remove(s.roomLightR); s.roomLightR.dispose();
+    scene.remove(s.roomBackLight); s.roomBackLight.dispose();
+    
+    if (s.colorTex) s.colorTex.dispose();
+    if (s.aoTex) s.aoTex.dispose();
+    if (s.heightTex) s.heightTex.dispose();
+    if (s.normalTex) s.normalTex.dispose();
+
 	for (const child of [...scene.children]) {
 		if (child instanceof THREE.AmbientLight) scene.remove(child);
 	}
@@ -790,5 +1229,5 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
 	}
 
 	for (const t of s.trails) { t.dispose(); scene.remove(t.dot, t.pPts, t.fPts); }
-	for (const t of s.threats) { t.geometry.dispose(); (t.material as THREE.Material).dispose(); scene.remove(t); }
+	for (const t of s.threats) { t.geometry.geometry.dispose(); (t.material as THREE.Material).dispose(); scene.remove(t); }
 }

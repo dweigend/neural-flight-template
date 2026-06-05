@@ -18,11 +18,11 @@ const parameters: ParameterDef[] = [
 	},
 	{
 		id: "phaseDuration",
-		label: "Phase Duration",
+		label: "Canal Duration",
 		group: "Pacing",
-		min: 20,
+		min: 10,
 		max: 120,
-		default: 60,
+		default: 45,
 		step: 5,
 		unit: "s",
 		icon: "Timer",
@@ -71,7 +71,7 @@ export const manifest: ExperienceManifest = {
 	id: "b4-lesser",
 	name: "B4.LESSER",
 	description:
-		"Cosmic rebirth variant. Enhanced peristalsis and layered nebula tunnel.",
+		"Canal → suction → dark room with doors.",
 	version: "0.1.0",
 	author: "B.lesser",
 
@@ -81,7 +81,6 @@ export const manifest: ExperienceManifest = {
 	interfaces: { orientation: true, speed: true },
 
 	// ── Scene defaults ───────────────────────────────────────────────
-	// Fog and background are managed by tick() — set fogNear: 0 to skip loader fog.
 	camera: { fov: 86, near: 0.05, far: 600 },
 	scene: {
 		background: "#000000",
