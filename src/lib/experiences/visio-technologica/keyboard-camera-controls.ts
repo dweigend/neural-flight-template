@@ -4,22 +4,41 @@ export const EXTERNAL_INPUT_GRACE_MS = 250;
 
 const MOVE_SPEED = 8;
 const VERTICAL_MOVE_SPEED = 5;
-const YAW_SPEED = 1.8;
-const PITCH_SPEED = 1.2;
+const MOVE_RESPONSE = 8;
+const ROTATION_RESPONSE = 10;
+const MAX_YAW_SPEED = 1.8;
+const MAX_PITCH_SPEED = 1.2;
 const MAX_PITCH = Math.PI / 2 - 0.05;
 
 export interface KeyboardCameraControls {
   keys: Set<string>;
+  moveVelocity: THREE.Vector3;
   pitch: number;
+  pitchVelocity: number;
   yaw: number;
+  yawVelocity: number;
   onBlur: () => void;
   onKeyDown: (event: KeyboardEvent) => void;
   onKeyUp: (event: KeyboardEvent) => void;
 }
 
+const CONTROL_KEYS = new Set([
+  "w",
+  "a",
+  "s",
+  "d",
+  "q",
+  "e",
+  "arrowup",
+  "arrowdown",
+  "arrowleft",
+  "arrowright",
+]);
+
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _movement = new THREE.Vector3();
+const _targetMovement = new THREE.Vector3();
 const _rotation = new THREE.Euler(0, 0, 0, "YXZ");
 
 export function createKeyboardCameraControls(
@@ -30,16 +49,32 @@ export function createKeyboardCameraControls(
 
   const controls: KeyboardCameraControls = {
     keys: new Set<string>(),
+    moveVelocity: new THREE.Vector3(),
     pitch: _rotation.x,
+    pitchVelocity: 0,
     yaw: _rotation.y,
+    yawVelocity: 0,
     onBlur: () => {
       controls.keys.clear();
+      controls.moveVelocity.set(0, 0, 0);
+      controls.pitchVelocity = 0;
+      controls.yawVelocity = 0;
     },
     onKeyDown: (event: KeyboardEvent) => {
-      controls.keys.add(normalizeKey(event.key));
+      const key = normalizeKey(event.key);
+      if (!CONTROL_KEYS.has(key)) {
+        return;
+      }
+      event.preventDefault();
+      controls.keys.add(key);
     },
     onKeyUp: (event: KeyboardEvent) => {
-      controls.keys.delete(normalizeKey(event.key));
+      const key = normalizeKey(event.key);
+      if (!CONTROL_KEYS.has(key)) {
+        return;
+      }
+      event.preventDefault();
+      controls.keys.delete(key);
     },
   };
 
@@ -55,60 +90,83 @@ export function updateKeyboardCameraControls(
   camera: THREE.PerspectiveCamera,
   delta: number,
 ): void {
-  if (controls.keys.has("arrowleft")) {
-    controls.yaw += YAW_SPEED * delta;
-  }
-  if (controls.keys.has("arrowright")) {
-    controls.yaw -= YAW_SPEED * delta;
-  }
-  if (controls.keys.has("arrowup")) {
-    controls.pitch += PITCH_SPEED * delta;
-  }
-  if (controls.keys.has("arrowdown")) {
-    controls.pitch -= PITCH_SPEED * delta;
+  const responseAlpha = 1 - Math.exp(-ROTATION_RESPONSE * delta);
+  const targetYawVelocity =
+    (controls.keys.has("arrowleft") ? 1 : 0) * MAX_YAW_SPEED +
+    (controls.keys.has("arrowright") ? -1 : 0) * MAX_YAW_SPEED;
+  const targetPitchVelocity =
+    (controls.keys.has("arrowup") ? 1 : 0) * MAX_PITCH_SPEED +
+    (controls.keys.has("arrowdown") ? -1 : 0) * MAX_PITCH_SPEED;
+
+  controls.yawVelocity = THREE.MathUtils.lerp(
+    controls.yawVelocity,
+    targetYawVelocity,
+    responseAlpha,
+  );
+  controls.pitchVelocity = THREE.MathUtils.lerp(
+    controls.pitchVelocity,
+    targetPitchVelocity,
+    responseAlpha,
+  );
+
+  controls.yaw += controls.yawVelocity * delta;
+  controls.pitch = THREE.MathUtils.clamp(
+    controls.pitch + controls.pitchVelocity * delta,
+    -MAX_PITCH,
+    MAX_PITCH,
+  );
+  if (controls.pitch === -MAX_PITCH || controls.pitch === MAX_PITCH) {
+    controls.pitchVelocity = 0;
   }
 
-  controls.pitch = THREE.MathUtils.clamp(controls.pitch, -MAX_PITCH, MAX_PITCH);
   camera.rotation.set(controls.pitch, controls.yaw, 0, "YXZ");
 
   _forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
   _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  _movement.set(0, 0, 0);
+  _targetMovement.set(0, 0, 0);
 
   if (controls.keys.has("w")) {
-    _movement.add(_forward);
+    _targetMovement.add(_forward);
   }
   if (controls.keys.has("s")) {
-    _movement.sub(_forward);
+    _targetMovement.sub(_forward);
   }
   if (controls.keys.has("d")) {
-    _movement.add(_right);
+    _targetMovement.add(_right);
   }
   if (controls.keys.has("a")) {
-    _movement.sub(_right);
+    _targetMovement.sub(_right);
   }
   if (controls.keys.has("e")) {
-    _movement.y += 1;
+    _targetMovement.y += 1;
   }
   if (controls.keys.has("q")) {
-    _movement.y -= 1;
+    _targetMovement.y -= 1;
   }
 
-  if (_movement.lengthSq() === 0) {
-    return;
+  if (_targetMovement.lengthSq() > 0) {
+    const horizontalLength = Math.hypot(_targetMovement.x, _targetMovement.z);
+    if (horizontalLength > 0) {
+      const horizontalScale = MOVE_SPEED / horizontalLength;
+      _targetMovement.x *= horizontalScale;
+      _targetMovement.z *= horizontalScale;
+    }
+
+    if (_targetMovement.y !== 0) {
+      _targetMovement.y = Math.sign(_targetMovement.y) * VERTICAL_MOVE_SPEED;
+    }
   }
 
-  const verticalInput = Math.abs(_movement.y) > 0 ? Math.sign(_movement.y) : 0;
-  _movement.y = 0;
+  const movementAlpha = 1 - Math.exp(-MOVE_RESPONSE * delta);
+  controls.moveVelocity.lerp(_targetMovement, movementAlpha);
+  _movement.copy(controls.moveVelocity).multiplyScalar(delta);
+  camera.position.add(_movement);
+}
 
-  if (_movement.lengthSq() > 0) {
-    _movement.normalize().multiplyScalar(MOVE_SPEED * delta);
-    camera.position.add(_movement);
-  }
-
-  if (verticalInput !== 0) {
-    camera.position.y += verticalInput * VERTICAL_MOVE_SPEED * delta;
-  }
+export function hasKeyboardCameraInput(
+  controls: KeyboardCameraControls,
+): boolean {
+  return controls.keys.size > 0;
 }
 
 export function disposeKeyboardCameraControls(

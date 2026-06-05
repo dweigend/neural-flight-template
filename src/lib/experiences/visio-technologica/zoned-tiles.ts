@@ -31,15 +31,15 @@ const ZONE_WEIGHTS = {
     empty: 0.1,
   },
   middle: {
-    hochhaus: 0.15,
+    hochhaus: 0.01,
     mietskaserne: 0.55,
     park: 0.1,
     empty: 0.2,
   },
   outer: {
-    hochhaus: 0.05,
-    mietskaserne: 0.15,
-    park: 0.5,
+    hochhaus: 0.0,
+    mietskaserne: 0.0,
+    park: 0.4,
     empty: 0.3,
   },
 } as const;

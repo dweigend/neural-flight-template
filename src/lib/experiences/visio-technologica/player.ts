@@ -1,4 +1,5 @@
 import type { ExperienceState } from "../types";
+import { hasKeyboardCameraInput } from "./keyboard-camera-controls";
 import type { VisioTechnologicaState } from "./scene";
 
 export function updatePlayer(
@@ -10,8 +11,9 @@ export function updatePlayer(
   const s = state as VisioTechnologicaState;
   const hasExternalOrientation =
     Number.isFinite(orientation.pitch) && Number.isFinite(orientation.roll);
+  const keyboardInputActive = hasKeyboardCameraInput(s.keyboardControls);
 
-  s.keyboardControlsActive = !hasExternalOrientation;
+  s.keyboardControlsActive = keyboardInputActive || !hasExternalOrientation;
   if (!hasExternalOrientation) {
     s.steeringPitch = 0;
     s.steeringRoll = 0;
