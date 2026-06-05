@@ -158,41 +158,56 @@ Even after startup is improved, rendering the whole scan at once may still be to
 
 ### Step-by-step implementation guide
 1. **Define the chunking rule**
-   - Decide whether chunks are individual tiles or small regions of multiple tiles.
-   - Define a load radius and an unload radius to avoid constant thrashing.
-   - **Prompt:** “Design a chunk-loading strategy for `visio-technologica`. Recommend whether each chunk should be a single tile or a small region of tiles, and define separate load and unload radii to avoid thrashing. Base the recommendation on the current tile layout and the goal of smoother runtime performance.”
+   - Prefer **single-tile chunks** for the current Visio Technologica asset set.
+   - Define separate **load** and **unload** radii from the start so the system has explicit hysteresis.
+   - Keep the current central starter tiles in mind as a protected bootstrap subset for startup.
+   - **Prompt:** “Design a chunk-loading strategy for `visio-technologica`. Assume the current world remains one GLB per tile. Recommend whether chunks should stay single-tile or be grouped, define separate load and unload radii, and explain how the starter tile set should behave during startup.”
 2. **Add tile metadata**
-   - Store per-tile center positions and identifiers in a lightweight manifest.
+   - Store per-tile identifiers and source-space center positions in a lightweight manifest.
    - This manifest should be readable without loading the full geometry.
-   - **Prompt:** “Add a lightweight tile metadata manifest for Visio Technologica that can be read without loading geometry. Include stable tile identifiers and center positions needed for distance-based loading, and keep the data format simple and explicit.”
-3. **Track player or camera position**
-   - Identify the best runtime position source in the current experience code.
-   - Update the loader only when the player has moved enough to matter.
-   - **Prompt:** “Find the best source of player or camera position in the current Visio Technologica runtime and wire it into a chunk-loader update path. Only trigger chunk reevaluation when movement passes a meaningful threshold so the system does not do unnecessary work every frame.”
-4. **Implement load/unload orchestration**
+   - Do **not** assume the raw metadata coordinates are already normalized tile steps.
+   - **Prompt:** “Add a lightweight tile metadata manifest for Visio Technologica that can be read without loading geometry. Include stable tile identifiers and source-space center positions needed for distance-based loading, and keep the data format simple and explicit.”
+3. **Normalize the tile grid before applying radii**
+   - Derive a **logical tile grid** with contiguous indices from the raw metadata centers.
+   - Use the logical grid for neighborhood checks, load radius, unload radius, and hysteresis.
+   - Preserve the raw metadata values unchanged for stability and traceability.
+   - **Prompt:** “Build a logical tile-grid mapping for Visio Technologica from the raw tile metadata. Preserve the original metadata values, but derive contiguous logical grid indices so load and unload radii operate on adjacent tiles instead of source-space coordinate gaps.”
+4. **Track the correct runtime focus position**
+   - Do not blindly use `camera.position` if the camera is offset behind or above the visible city.
+   - Derive a chunk-loader focus point from what the player is actually looking at, such as the camera look direction projected onto the tile plane.
+   - Only reevaluate the loader when that focus point has moved enough to matter.
+   - **Prompt:** “Find the best runtime chunk-focus source in the current Visio Technologica runtime. Account for the startup camera being offset from the visible world by projecting the camera look direction onto the tile plane, and only trigger chunk reevaluation when that focus point moves by a meaningful threshold.”
+5. **Implement load/unload orchestration**
    - Load nearby tiles asynchronously.
-   - Unload far tiles and dispose of geometry/material/texture resources correctly.
-   - Keep a cache/map of tile state: unloaded, loading, loaded, unloading.
-   - **Prompt:** “Implement the distance-based load/unload orchestration for Visio Technologica. Load nearby chunks asynchronously, unload distant chunks with correct Three.js disposal for geometry, materials, and textures, and maintain explicit chunk state such as unloaded, loading, loaded, and unloading.”
-5. **Prevent visual instability**
-   - Use hysteresis between load and unload thresholds.
-   - Limit how many new chunks can start loading in a single update.
-   - **Prompt:** “Stabilize the distance-based loader so it does not thrash or cause obvious pop-in spikes. Add hysteresis between load and unload thresholds and limit how many new chunks can begin loading during a single update cycle.”
-6. **Test stage**
+   - Unload far tiles and dispose of geometry, materials, and textures correctly.
+   - Keep explicit chunk state such as `unloaded`, `loading`, `loaded`, and `unloading`.
+   - Seed the chunk state map with the already-loaded starter tiles instead of treating everything as initially unloaded.
+   - **Prompt:** “Implement the distance-based load/unload orchestration for Visio Technologica. Load nearby chunks asynchronously, unload distant chunks with correct Three.js disposal for geometry, materials, and textures, maintain explicit chunk state such as unloaded, loading, loaded, and unloading, and initialize the starter tiles as already loaded.”
+6. **Prevent visual instability**
+   - Keep hysteresis explicit by maintaining separate desired **load** and **retained** tile sets.
+   - Limit how many new chunks can start loading during a single streaming cycle.
+   - Be careful not to discard the initially visible starter tiles just because the chunk focus calculation is wrong.
+   - **Prompt:** “Stabilize the distance-based loader so it does not thrash or cause obvious pop-in spikes. Keep separate desired load and retained tile sets for hysteresis, limit how many new chunks can begin loading during a single update cycle, and make sure the initial visible starter tiles are not discarded due to incorrect focus selection.”
+7. **Test stage**
    - Run `bunx svelte-check --threshold warning`
    - Run `bunx biome check --write .`
    - Manually test by moving through the world and checking:
-     - tiles load ahead of the player
-     - distant tiles unload cleanly
-     - no repeated loading loops or memory spikes occur
+     - starter tiles remain visible after startup
+     - the active chunk focus matches the visible center of the scene, not just the raw camera position
+     - neighboring tiles load ahead of movement or gaze direction
+     - distant tiles unload cleanly without repeated load/unload loops
      - frame pacing is better than the fully loaded version
-   - **Prompt:** “Validate the distance-based tile streaming implementation. Run `bunx svelte-check --threshold warning` and `bunx biome check --write .`, summarize any issues, and give me a manual test checklist for confirming tiles load ahead of movement, unload cleanly behind the player, and improve runtime smoothness without repeated load loops.”
-7. **Commit stage**
+   - Use logs or a debug overlay to inspect:
+     - active tile id
+     - load set size vs retained set size
+     - reevaluation count
+   - **Prompt:** “Validate the distance-based tile streaming implementation. Run `bunx svelte-check --threshold warning` and `bunx biome check --write .`, summarize any issues, and give me a manual test checklist that specifically verifies starter tiles do not disappear at startup, focus selection matches the visible world, tiles load ahead of movement, and no repeated unload loops occur.”
+8. **Commit stage**
    - Commit this as its own feature because it changes runtime behavior significantly.
    - Suggested commit message: `feat(visio-technologica): add distance-based tile streaming`
    - **Prompt:** “Prepare the distance-based loader work for commit. Summarize the behavior change, list the touched files, and suggest a clean commit message for the new chunked streaming system.”
-8. **Coding-agent prompt to use**
-   - “Implement a distance-based tile loader for `src/lib/experiences/visio-technologica`. Use explicit tile metadata, load nearby tiles asynchronously, unload distant tiles with proper Three.js disposal, and avoid load/unload thrashing.”
+9. **Coding-agent prompt to use**
+   - “Implement a distance-based tile loader for `src/lib/experiences/visio-technologica`. Use explicit tile metadata, derive a logical tile grid from raw centers, choose chunk focus from the visible look target rather than only raw camera position, load nearby tiles asynchronously, unload distant tiles with proper Three.js disposal, and avoid load/unload thrashing.”
 
 ---
 

@@ -3,6 +3,13 @@ import { loadGLTF } from "$lib/three/loader";
 import { createSky } from "$lib/three/sky";
 import type { ExperienceState, SetupContext, TickContext } from "../types";
 import {
+  STARTER_WORLD_TILE_FILES,
+  WORLD_TILE_FILES,
+  VISIO_TECHNOLOGICA_LOGICAL_TILE_GRID,
+  getLogicalTileMetadataByFileName,
+  type VisioTechnologicaLogicalTileMetadata,
+} from "./tile-metadata";
+import {
   createKeyboardCameraControls,
   disposeKeyboardCameraControls,
   updateKeyboardCameraControls,
@@ -20,7 +27,11 @@ const WORLD_CAMERA_DISTANCE_OFFSET = 80;
 const WORLD_LOOK_AT_HEIGHT = 12;
 const WORLD_ROTATION_X = -Math.PI / 2;
 const WORLD_ROOT_NAME = "visio-technologica-world";
-const DEFERRED_WORLD_TILE_BATCH_SIZE = 1;
+const CHUNK_LOAD_RADIUS = 1;
+const CHUNK_UNLOAD_RADIUS = 2;
+const CHUNK_FOCUS_REEVALUATION_THRESHOLD_RATIO = 0.35;
+const MIN_CHUNK_FOCUS_REEVALUATION_THRESHOLD = 8;
+const MAX_CHUNK_LOADS_PER_TURN = 1;
 const DEFERRED_WORLD_TILE_SCHEDULE_DELAY_MS = 0;
 const LOG_WORLD_TILE_STREAMING_PROGRESS = true;
 const DEBUG_OVERLAY_CANVAS_WIDTH = 320;
@@ -31,49 +42,35 @@ const DEBUG_OVERLAY_OFFSET_Y = 0.42;
 const DEBUG_OVERLAY_SCALE_X = 0.72;
 const DEBUG_OVERLAY_SCALE_Y = 0.22;
 
-const WORLD_TILE_FILES = [
-  "Mesh_3887_58193_-002.glb",
-  "Mesh_3887_58196_-002.glb",
-  "Mesh_3887_58200_-002.glb",
-  "Mesh_3887_58203_-002.glb",
-  "Mesh_3890_58193_-002.glb",
-  "Mesh_3890_58196_-002.glb",
-  "Mesh_3890_58200_-002.glb",
-  "Mesh_3890_58203_-002.glb",
-  "Mesh_3890_58207_-002.glb",
-  "Mesh_3894_58196_-002.glb",
-  "Mesh_3894_58200_-002.glb",
-  "Mesh_3894_58203_-002.glb",
-  "Mesh_3894_58207_-002.glb",
-  "Mesh_3898_58196_-002.glb",
-  "Mesh_3898_58200_-002.glb",
-  "Mesh_3898_58203_-002.glb",
-  "Mesh_3898_58207_-002.glb",
-] as const;
-
 type WorldTileFile = (typeof WORLD_TILE_FILES)[number];
+type WorldTileChunkStatus = "unloaded" | "loading" | "loaded" | "unloading";
 
 interface WorldTileGridCoordinate {
   x: number;
   y: number;
 }
 
-const STARTER_WORLD_TILE_FILES: readonly WorldTileFile[] = [
-  "Mesh_3890_58200_-002.glb",
-  "Mesh_3890_58203_-002.glb",
-  "Mesh_3894_58200_-002.glb",
-  "Mesh_3894_58203_-002.glb",
-];
+interface RuntimeChunkFocusState {
+  plane: THREE.Plane;
+  point: THREE.Vector3;
+  lastReevaluationPoint: THREE.Vector3;
+  reevaluationThreshold: number;
+  needsReevaluation: boolean;
+}
 
-const STARTER_WORLD_TILE_FILE_SET = new Set<WorldTileFile>(
-  STARTER_WORLD_TILE_FILES,
-);
+interface WorldTilePlacementContext {
+  nativeOrigin: THREE.Vector3;
+  starterGridAnchor: WorldTileGridCoordinate;
+  starterWorldAnchor: THREE.Vector3;
+  tileWorldStep: THREE.Vector3;
+}
 
-const DEFERRED_WORLD_TILE_FILES: readonly WorldTileFile[] =
-  WORLD_TILE_FILES.filter(
-    (fileName): fileName is WorldTileFile =>
-      !STARTER_WORLD_TILE_FILE_SET.has(fileName),
-  );
+interface WorldTileChunkRuntimeState {
+  metadata: VisioTechnologicaLogicalTileMetadata;
+  status: WorldTileChunkStatus;
+  model: THREE.Group | null;
+  sceneFocusPoint: THREE.Vector3;
+}
 
 export interface VisioTechnologicaState extends ExperienceState {
   camera: THREE.PerspectiveCamera;
@@ -96,7 +93,11 @@ export interface VisioTechnologicaState extends ExperienceState {
   loadedWorldTileCount: number;
   remainingWorldTileCount: number;
   starterWorldTileCount: number;
-  deferredWorldTileFiles: readonly WorldTileFile[];
+  chunkFocus: RuntimeChunkFocusState;
+  tilePlacement: WorldTilePlacementContext;
+  tileChunks: Map<WorldTileFile, WorldTileChunkRuntimeState>;
+  activeFocusTileFile: WorldTileFile | null;
+  chunkStreamingPending: boolean;
   deferredWorldTileLoadPromise: Promise<void> | null;
   deferredWorldTileScheduleHandle: ReturnType<typeof setTimeout> | null;
   deferredWorldTileScheduleResolve: (() => void) | null;
@@ -124,29 +125,43 @@ export async function setup(
   );
   const starterModels = starterTileEntries.map((entry) => entry.model);
   const nativeBounds = getWorldBounds(starterModels);
-  const nativeOrigin = getWorldNativeOrigin(nativeBounds);
-  const starterGridAnchor = getStarterGridAnchor(STARTER_WORLD_TILE_FILES);
-  const starterWorldAnchor = getStarterWorldAnchor(nativeOrigin);
-  const tileWorldStep = getTileWorldStep(starterTileEntries);
+  const tilePlacement: WorldTilePlacementContext = {
+    nativeOrigin: getWorldNativeOrigin(nativeBounds),
+    starterGridAnchor: getStarterGridAnchor(STARTER_WORLD_TILE_FILES),
+    starterWorldAnchor: getStarterWorldAnchor(
+      getWorldNativeOrigin(nativeBounds),
+    ),
+    tileWorldStep: getTileWorldStep(starterTileEntries),
+  };
 
-  addWorldModels(
-    world,
-    starterTileEntries,
-    nativeOrigin,
-    starterGridAnchor,
-    starterWorldAnchor,
-    tileWorldStep,
-  );
+  addWorldModels(world, starterTileEntries, tilePlacement);
   world.rotation.x = WORLD_ROTATION_X;
+  world.updateMatrixWorld(true);
 
   const worldBounds = new THREE.Box3().setFromObject(world);
   positionCamera(ctx.camera, worldBounds);
+  world.updateMatrixWorld(true);
+
+  const chunkFocusPlane = createChunkFocusPlane(worldBounds);
+  const initialChunkFocusPoint = getChunkFocusPoint(
+    ctx.camera,
+    chunkFocusPlane,
+    worldBounds.getCenter(new THREE.Vector3()),
+  );
+  const chunkFocusReevaluationThreshold = getChunkFocusReevaluationThreshold(
+    tilePlacement.tileWorldStep,
+  );
 
   const keyboardControls = createKeyboardCameraControls(ctx.camera);
   const debugOverlay = createWorldTileDebugOverlay(ctx.camera);
 
   const starterWorldTileCount = starterModels.length;
   const totalWorldTileCount = WORLD_TILE_FILES.length;
+  const tileChunks = createTileChunkRuntimeStates(
+    tilePlacement,
+    world,
+    starterTileEntries,
+  );
 
   const state: VisioTechnologicaState = {
     camera: ctx.camera,
@@ -169,25 +184,27 @@ export async function setup(
     loadedWorldTileCount: starterWorldTileCount,
     remainingWorldTileCount: totalWorldTileCount - starterWorldTileCount,
     starterWorldTileCount,
-    deferredWorldTileFiles: DEFERRED_WORLD_TILE_FILES,
+    chunkFocus: {
+      plane: chunkFocusPlane,
+      point: initialChunkFocusPoint.clone(),
+      lastReevaluationPoint: initialChunkFocusPoint.clone(),
+      reevaluationThreshold: chunkFocusReevaluationThreshold,
+      needsReevaluation: true,
+    },
+    tilePlacement,
+    tileChunks,
+    activeFocusTileFile: null,
+    chunkStreamingPending: true,
     deferredWorldTileLoadPromise: null,
     deferredWorldTileScheduleHandle: null,
     deferredWorldTileScheduleResolve: null,
     isDisposed: false,
   };
 
+  updateChunkFocus(state, true);
   updateWorldTileDebugOverlay(state, "starter");
   logWorldTileStreamingProgress(state, "starter tiles ready");
-
-  state.deferredWorldTileLoadPromise = loadDeferredWorldTiles(
-    state,
-    nativeOrigin,
-    starterGridAnchor,
-    starterWorldAnchor,
-    tileWorldStep,
-  ).catch((error: unknown) => {
-    console.error("Failed to load deferred Visio Technologica tiles", error);
-  });
+  scheduleChunkStreaming(state);
 
   return state;
 }
@@ -204,6 +221,10 @@ export function tick(
 
   s.flightHeight = s.camera.position.y;
   s.sky.position.copy(s.camera.position);
+
+  if (updateChunkFocus(s, false)) {
+    scheduleChunkStreaming(s);
+  }
 
   return { state: s };
 }
@@ -235,50 +256,255 @@ async function loadWorldTile(
   return { fileName, model };
 }
 
-async function loadDeferredWorldTiles(
-  state: VisioTechnologicaState,
-  nativeOrigin: THREE.Vector3,
-  starterGridAnchor: WorldTileGridCoordinate,
-  starterWorldAnchor: THREE.Vector3,
-  tileWorldStep: THREE.Vector3,
-): Promise<void> {
-  const remainingWorldTileFiles = [...state.deferredWorldTileFiles];
+function createTileChunkRuntimeStates(
+  tilePlacement: WorldTilePlacementContext,
+  world: THREE.Group,
+  starterTileEntries: readonly {
+    fileName: WorldTileFile;
+    model: THREE.Group;
+  }[],
+): Map<WorldTileFile, WorldTileChunkRuntimeState> {
+  const starterModelByFileName = new Map<WorldTileFile, THREE.Group>(
+    starterTileEntries.map((entry) => [entry.fileName, entry.model]),
+  );
 
-  while (remainingWorldTileFiles.length > 0) {
+  const chunks = new Map<WorldTileFile, WorldTileChunkRuntimeState>();
+  for (const metadata of VISIO_TECHNOLOGICA_LOGICAL_TILE_GRID) {
+    const starterModel = starterModelByFileName.get(metadata.fileName) ?? null;
+    chunks.set(metadata.fileName, {
+      metadata,
+      status: starterModel ? "loaded" : "unloaded",
+      model: starterModel,
+      sceneFocusPoint: getSceneFocusPointForTile(
+        metadata.fileName,
+        tilePlacement,
+        world,
+      ),
+    });
+  }
+
+  return chunks;
+}
+
+function scheduleChunkStreaming(state: VisioTechnologicaState): void {
+  state.chunkStreamingPending = true;
+
+  if (state.deferredWorldTileLoadPromise !== null || state.isDisposed) {
+    return;
+  }
+
+  state.deferredWorldTileLoadPromise = runChunkStreamingLoop(state)
+    .catch((error: unknown) => {
+      console.error("Failed to stream Visio Technologica tiles", error);
+    })
+    .finally(() => {
+      state.deferredWorldTileLoadPromise = null;
+      if (state.chunkStreamingPending && !state.isDisposed) {
+        scheduleChunkStreaming(state);
+      }
+    });
+}
+
+async function runChunkStreamingLoop(
+  state: VisioTechnologicaState,
+): Promise<void> {
+  while (!state.isDisposed) {
+    if (!state.chunkStreamingPending) {
+      return;
+    }
+
+    state.chunkStreamingPending = false;
     await waitForDeferredWorldTileTurn(state);
     if (state.isDisposed) {
       return;
     }
 
-    const batchTileFiles = remainingWorldTileFiles.splice(
-      0,
-      DEFERRED_WORLD_TILE_BATCH_SIZE,
-    );
-    const models = await Promise.all(
-      batchTileFiles.map((fileName) => loadWorldTile(fileName)),
+    const hasMoreWork = await reconcileChunkStreaming(state);
+    if (hasMoreWork) {
+      state.chunkStreamingPending = true;
+    }
+  }
+}
+
+async function reconcileChunkStreaming(
+  state: VisioTechnologicaState,
+): Promise<boolean> {
+  const focusChunk = getNearestChunkToFocus(state);
+  if (!focusChunk) {
+    return false;
+  }
+
+  state.activeFocusTileFile = focusChunk.metadata.fileName;
+
+  const desiredLoadFiles = new Set<WorldTileFile>();
+  const retainedFiles = new Set<WorldTileFile>();
+
+  for (const chunk of state.tileChunks.values()) {
+    const distance = getLogicalTileDistance(
+      focusChunk.metadata,
+      chunk.metadata,
     );
 
-    if (state.isDisposed) {
-      for (const entry of models) {
-        disposeWorldModel(entry.model);
-      }
-      return;
+    if (distance <= CHUNK_LOAD_RADIUS) {
+      desiredLoadFiles.add(chunk.metadata.fileName);
+    }
+    if (distance <= CHUNK_UNLOAD_RADIUS) {
+      retainedFiles.add(chunk.metadata.fileName);
+    }
+  }
+
+  let changed = false;
+
+  for (const chunk of state.tileChunks.values()) {
+    if (chunk.status !== "loaded") {
+      continue;
+    }
+    if (retainedFiles.has(chunk.metadata.fileName)) {
+      continue;
     }
 
-    addWorldModels(
-      state.world,
-      models,
-      nativeOrigin,
-      starterGridAnchor,
-      starterWorldAnchor,
-      tileWorldStep,
-    );
-    state.loadedWorldTileCount += models.length;
-    state.remainingWorldTileCount =
-      state.totalWorldTileCount - state.loadedWorldTileCount;
-    updateWorldTileDebugOverlay(state, "streaming");
-    logWorldTileStreamingProgress(state, "deferred tiles streamed");
+    unloadTileChunk(state, chunk);
+    changed = true;
   }
+
+  const loadCandidates = [...desiredLoadFiles]
+    .map((fileName) => state.tileChunks.get(fileName))
+    .filter(
+      (chunk): chunk is WorldTileChunkRuntimeState =>
+        chunk !== undefined && chunk.status === "unloaded",
+    )
+    .sort(
+      (left, right) =>
+        left.sceneFocusPoint.distanceToSquared(state.chunkFocus.point) -
+        right.sceneFocusPoint.distanceToSquared(state.chunkFocus.point),
+    );
+
+  const chunksToLoad = loadCandidates.slice(0, MAX_CHUNK_LOADS_PER_TURN);
+  for (const chunk of chunksToLoad) {
+    await loadTileChunk(state, chunk);
+    changed = true;
+    if (state.isDisposed) {
+      return false;
+    }
+  }
+
+  if (changed) {
+    updateWorldTileCounts(state);
+    updateWorldTileDebugOverlay(state, "streaming");
+    logWorldTileStreamingProgress(
+      state,
+      `focus ${focusChunk.metadata.id} streamed`,
+    );
+  }
+
+  return hasChunkStreamingWorkRemaining(state, desiredLoadFiles, retainedFiles);
+}
+
+async function loadTileChunk(
+  state: VisioTechnologicaState,
+  chunk: WorldTileChunkRuntimeState,
+): Promise<void> {
+  if (chunk.status !== "unloaded") {
+    return;
+  }
+
+  chunk.status = "loading";
+  const entry = await loadWorldTile(chunk.metadata.fileName);
+
+  if (state.isDisposed) {
+    disposeWorldModel(entry.model);
+    chunk.status = "unloaded";
+    return;
+  }
+
+  addWorldModels(state.world, [entry], state.tilePlacement);
+  state.world.updateMatrixWorld(true);
+  chunk.model = entry.model;
+  chunk.status = "loaded";
+}
+
+function unloadTileChunk(
+  state: VisioTechnologicaState,
+  chunk: WorldTileChunkRuntimeState,
+): void {
+  if (chunk.status !== "loaded" || chunk.model === null) {
+    return;
+  }
+
+  chunk.status = "unloading";
+  state.world.remove(chunk.model);
+  disposeWorldModel(chunk.model);
+  chunk.model = null;
+  chunk.status = "unloaded";
+}
+
+function hasChunkStreamingWorkRemaining(
+  state: VisioTechnologicaState,
+  desiredLoadFiles: ReadonlySet<WorldTileFile>,
+  retainedFiles: ReadonlySet<WorldTileFile>,
+): boolean {
+  for (const chunk of state.tileChunks.values()) {
+    if (
+      desiredLoadFiles.has(chunk.metadata.fileName) &&
+      (chunk.status === "unloaded" || chunk.status === "loading")
+    ) {
+      return true;
+    }
+
+    if (
+      !retainedFiles.has(chunk.metadata.fileName) &&
+      (chunk.status === "loaded" || chunk.status === "unloading")
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getNearestChunkToFocus(
+  state: VisioTechnologicaState,
+): WorldTileChunkRuntimeState | null {
+  let nearestChunk: WorldTileChunkRuntimeState | null = null;
+  let nearestDistanceSquared = Number.POSITIVE_INFINITY;
+
+  for (const chunk of state.tileChunks.values()) {
+    const distanceSquared = chunk.sceneFocusPoint.distanceToSquared(
+      state.chunkFocus.point,
+    );
+    if (distanceSquared >= nearestDistanceSquared) {
+      continue;
+    }
+
+    nearestChunk = chunk;
+    nearestDistanceSquared = distanceSquared;
+  }
+
+  return nearestChunk;
+}
+
+function getLogicalTileDistance(
+  left: VisioTechnologicaLogicalTileMetadata,
+  right: VisioTechnologicaLogicalTileMetadata,
+): number {
+  return Math.max(
+    Math.abs(left.logicalCoordinate.column - right.logicalCoordinate.column),
+    Math.abs(left.logicalCoordinate.row - right.logicalCoordinate.row),
+  );
+}
+
+function updateWorldTileCounts(state: VisioTechnologicaState): void {
+  let loadedWorldTileCount = 0;
+
+  for (const chunk of state.tileChunks.values()) {
+    if (chunk.status === "loaded") {
+      loadedWorldTileCount += 1;
+    }
+  }
+
+  state.loadedWorldTileCount = loadedWorldTileCount;
+  state.remainingWorldTileCount =
+    state.totalWorldTileCount - loadedWorldTileCount;
 }
 
 function waitForDeferredWorldTileTurn(
@@ -309,14 +535,10 @@ function clearDeferredWorldTileSchedule(state: VisioTechnologicaState): void {
 function getWorldTileGridCoordinate(
   fileName: WorldTileFile,
 ): WorldTileGridCoordinate {
-  const match = /Mesh_(\d+)_(\d+)_-?\d+\.glb$/u.exec(fileName);
-  if (!match) {
-    throw new Error(`Invalid Visio Technologica tile name: ${fileName}`);
-  }
-
+  const metadata = getLogicalTileMetadataByFileName(fileName);
   return {
-    x: Number(match[1]),
-    y: Number(match[2]),
+    x: metadata.center.x,
+    y: metadata.center.y,
   };
 }
 
@@ -432,20 +654,17 @@ function getWorldNativeOrigin(nativeBounds: THREE.Box3): THREE.Vector3 {
 function addWorldModels(
   world: THREE.Group,
   tileEntries: readonly { fileName: WorldTileFile; model: THREE.Object3D }[],
-  nativeOrigin: THREE.Vector3,
-  starterGridAnchor: WorldTileGridCoordinate,
-  starterWorldAnchor: THREE.Vector3,
-  tileWorldStep: THREE.Vector3,
+  tilePlacement: WorldTilePlacementContext,
 ): void {
   for (const entry of tileEntries) {
     const tileGridCoordinate = getWorldTileGridCoordinate(entry.fileName);
     positionWorldTile(
       entry.model,
-      nativeOrigin,
+      tilePlacement.nativeOrigin,
       tileGridCoordinate,
-      starterGridAnchor,
-      starterWorldAnchor,
-      tileWorldStep,
+      tilePlacement.starterGridAnchor,
+      tilePlacement.starterWorldAnchor,
+      tilePlacement.tileWorldStep,
     );
     world.add(entry.model);
   }
@@ -485,6 +704,25 @@ function positionWorldTile(
   );
 }
 
+function getSceneFocusPointForTile(
+  fileName: WorldTileFile,
+  tilePlacement: WorldTilePlacementContext,
+  world: THREE.Group,
+): THREE.Vector3 {
+  const tileGridCoordinate = getWorldTileGridCoordinate(fileName);
+  const gridOffsetX = tileGridCoordinate.x - tilePlacement.starterGridAnchor.x;
+  const gridOffsetY = tileGridCoordinate.y - tilePlacement.starterGridAnchor.y;
+  const localPoint = new THREE.Vector3(
+    tilePlacement.starterWorldAnchor.x +
+      tilePlacement.tileWorldStep.x * gridOffsetX,
+    tilePlacement.starterWorldAnchor.y +
+      tilePlacement.tileWorldStep.y * gridOffsetY,
+    -tilePlacement.nativeOrigin.z,
+  );
+
+  return world.localToWorld(localPoint);
+}
+
 function positionCamera(
   camera: THREE.PerspectiveCamera,
   worldBounds: THREE.Box3,
@@ -499,6 +737,74 @@ function positionCamera(
     center.z + horizontalSpan * 0.5 + WORLD_CAMERA_DISTANCE_OFFSET,
   );
   camera.lookAt(center.x, center.y + WORLD_LOOK_AT_HEIGHT, center.z);
+}
+
+function createChunkFocusPlane(worldBounds: THREE.Box3): THREE.Plane {
+  const worldCenter = worldBounds.getCenter(new THREE.Vector3());
+  return new THREE.Plane(new THREE.Vector3(0, 1, 0), -worldCenter.y);
+}
+
+function getChunkFocusReevaluationThreshold(
+  tileWorldStep: THREE.Vector3,
+): number {
+  const tileStepX = Math.abs(tileWorldStep.x);
+  const tileStepZ = Math.abs(tileWorldStep.y);
+  const smallestTileStep = Math.min(tileStepX, tileStepZ);
+
+  return Math.max(
+    MIN_CHUNK_FOCUS_REEVALUATION_THRESHOLD,
+    smallestTileStep * CHUNK_FOCUS_REEVALUATION_THRESHOLD_RATIO,
+  );
+}
+
+function getChunkFocusPoint(
+  camera: THREE.PerspectiveCamera,
+  plane: THREE.Plane,
+  fallbackPoint: THREE.Vector3,
+): THREE.Vector3 {
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+    camera.quaternion,
+  );
+  const focusRay = new THREE.Ray(camera.position.clone(), forward.normalize());
+  const projectedFocusPoint = new THREE.Vector3();
+  const rayIntersection = focusRay.intersectPlane(plane, projectedFocusPoint);
+
+  if (rayIntersection !== null) {
+    return projectedFocusPoint;
+  }
+
+  return new THREE.Vector3(
+    fallbackPoint.x,
+    plane.constant * -1,
+    fallbackPoint.z,
+  );
+}
+
+function updateChunkFocus(
+  state: VisioTechnologicaState,
+  forceReevaluation: boolean,
+): boolean {
+  const nextFocusPoint = getChunkFocusPoint(
+    state.camera,
+    state.chunkFocus.plane,
+    state.chunkFocus.point,
+  );
+
+  state.chunkFocus.point.copy(nextFocusPoint);
+
+  const movedDistance =
+    state.chunkFocus.lastReevaluationPoint.distanceTo(nextFocusPoint);
+  if (
+    !forceReevaluation &&
+    movedDistance < state.chunkFocus.reevaluationThreshold
+  ) {
+    state.chunkFocus.needsReevaluation = false;
+    return false;
+  }
+
+  state.chunkFocus.lastReevaluationPoint.copy(nextFocusPoint);
+  state.chunkFocus.needsReevaluation = true;
+  return true;
 }
 
 function disposeWorld(world: THREE.Group, scene: THREE.Scene): void {
