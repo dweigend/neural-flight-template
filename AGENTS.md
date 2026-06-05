@@ -171,6 +171,12 @@ Use `InstancedMesh` for repeated geometry. Chunk terrain. Pool objects.
 
 ---
 
+## Branch `ll` Workflow
+
+- **Commit nur auf Nachfrage**: Nach jeder Änderung fragen, ob mit Zusammenfassung committed werden soll
+- **Push**: Automatisch stündlich via Windows Scheduled Task `NeuralFlight-GitPush-ll`
+- **Branch**: `ll` → `origin/ll`
+
 ## Testing
 
 ```bash
