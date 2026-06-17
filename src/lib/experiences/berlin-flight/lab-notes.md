@@ -130,9 +130,11 @@ Cons:
 - highest engineering cost
 - highest culling, transform, and cleanup risk
 
-**Decision:** begin implementation experiments behind the local adapter with **`3d-tiles-renderer`**. Keep `@loaders.gl/tiles` as the strongest fallback and consider a custom stack only if packaged options fail.
-
----
+	Decision:** begin implementation experiments behind the local adapter with **`3d-tiles-renderer`**. Keep `@loaders.gl/tiles` as the strongest fallback and consider a custom stack only if packaged options fail.
+	
+	*Update Phase 3:* Implemented `runtime/tiles-source.ts` and `runtime/tiles-runtime.ts` as the adapter boundary.
+	
+	---
 ## Phase-1 technical guardrails
 ### Performance
 - target **WebXR + WebGL** first
