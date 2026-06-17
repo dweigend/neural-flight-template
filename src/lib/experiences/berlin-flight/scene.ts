@@ -7,6 +7,11 @@ import {
   BERLIN_SPAWN,
   BERLIN_TILE_RUNTIME,
 } from "./constants";
+import {
+  createStatusIndicator,
+  disposeStatusIndicator,
+  updateStatusIndicator,
+} from "./debug/status-indicator";
 import { zeroLocalCoordinate } from "./geo";
 import { createTilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import { createBerlinTilesSource } from "./runtime/tiles-source";
@@ -46,6 +51,7 @@ function syncTilesLoadState(state: BerlinFlightState): void {
   state.tilesLoad.status = state.tilesRuntime.stats.status;
   state.tilesLoad.isReady = state.tilesRuntime.stats.status === "ready";
   state.tilesLoad.errorMessage = state.tilesRuntime.stats.lastErrorMessage;
+  updateStatusIndicator(state.statusIndicator, state.tilesLoad);
 }
 
 async function initializeTilesRuntime(state: BerlinFlightState): Promise<void> {
@@ -80,6 +86,9 @@ export async function setup(ctx: SetupContext): Promise<BerlinFlightState> {
   const tilesRuntime = createTilesRuntimeAdapter();
   root.add(tilesRuntime.root);
 
+  const statusIndicator = createStatusIndicator();
+  player.camera.add(statusIndicator.group);
+
   const settings = createDefaultBerlinSettings();
   player.baseSpeed = settings.baseSpeed;
 
@@ -89,6 +98,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinFlightState> {
     player,
     root,
     placeholder,
+    statusIndicator,
     tilesRuntime,
     tilesLoad: createInitialTilesLoadState(),
     settings,
@@ -96,7 +106,9 @@ export async function setup(ctx: SetupContext): Promise<BerlinFlightState> {
     isDisposed: false,
   };
 
+  syncTilesLoadState(state);
   await initializeTilesRuntime(state);
+  syncTilesLoadState(state);
   return state;
 }
 
@@ -133,6 +145,7 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
 
   s.isDisposed = true;
   s.tilesRuntime.dispose();
+  disposeStatusIndicator(s.statusIndicator);
   disposePlaceholder(s.placeholder);
   s.root.removeFromParent();
   s.player.rig.removeFromParent();

@@ -2,6 +2,7 @@ import type * as THREE from "three";
 import type { FlightPlayer } from "$lib/three/player";
 import type { ExperienceState } from "../types";
 import { BERLIN_DEFAULT_SETTINGS, BERLIN_TILE_RUNTIME } from "./constants";
+import type { BerlinStatusIndicator } from "./debug/status-indicator";
 import type {
   TilesRuntimeAdapter,
   TilesRuntimeStatus,
@@ -32,6 +33,7 @@ export interface BerlinFlightState extends ExperienceState {
   player: FlightPlayer;
   root: THREE.Group;
   placeholder: BerlinPlaceholderResources;
+  statusIndicator: BerlinStatusIndicator;
   tilesRuntime: TilesRuntimeAdapter;
   tilesLoad: BerlinTilesLoadState;
   settings: BerlinExperienceSettings;
