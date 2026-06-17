@@ -1,0 +1,3 @@
+# Ignore local static assets for this experience
+/static/**
+!/static/.gitignore
