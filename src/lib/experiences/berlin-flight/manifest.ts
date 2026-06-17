@@ -1,61 +1,50 @@
 import type { ExperienceManifest, ParameterDef } from "../types";
-import {
-  BERLIN_CAMERA,
-  BERLIN_EXPERIENCE_ID,
-  BERLIN_SCENE,
-  BERLIN_SPAWN,
-  BERLIN_TILE_RUNTIME,
-} from "./constants";
 import { updatePlayer } from "./player";
 import { dispose, setup, tick } from "./scene";
 import { applySettings } from "./settings";
 
 const parameters: ParameterDef[] = [
-  {
-    id: "baseSpeed",
-    label: "Base Speed",
-    group: "Flight",
-    min: 4,
-    max: 40,
-    default: 12,
-    step: 1,
-    unit: "m/s",
-    icon: "Gauge",
-  },
-  {
-    id: "showPlaceholder",
-    label: "Show Placeholder",
-    group: "Debug",
-    type: "boolean",
-    min: 0,
-    max: 1,
-    default: false,
-    step: 1,
-    icon: "Move3d",
-  },
+	{
+		id: "moveSpeed",
+		label: "Flight Speed",
+		group: "Movement",
+		min: 0,
+		max: 50,
+		default: 10,
+		step: 1,
+		unit: "m/s",
+		icon: "Gauge",
+	},
 ];
 
 export const manifest: ExperienceManifest = {
-  id: BERLIN_EXPERIENCE_ID,
-  name: "Berlin Flight",
-  description: `Minimal Berlin Mitte scaffold targeting ${BERLIN_TILE_RUNTIME.packageName} for phase 1.`,
-  version: "0.1.0",
-  author: "ICAROS Lab",
-  parameters,
-  outputs: [
-    {
-      id: "tilesReady",
-      label: "Tiles Ready",
-      type: "number",
-    },
-  ],
-  interfaces: { orientation: true, speed: true },
-  camera: BERLIN_CAMERA,
-  scene: BERLIN_SCENE,
-  spawn: BERLIN_SPAWN,
-  setup,
-  tick,
-  applySettings,
-  updatePlayer,
-  dispose,
+	id: "berlin-flight",
+	name: "Berlin Flight",
+	description: "Fly over a 3D photorealistic model of Berlin using Cesium Ion tiles.",
+	version: "0.1.0",
+	author: "Neural Flight",
+
+	parameters,
+	interfaces: { orientation: true, speed: true },
+
+	camera: { fov: 75, near: 0.1, far: 10000 },
+	scene: {
+		background: "#87ceeb", // Sky blue
+		fogNear: 100,
+		fogFar: 5000,
+		fogColor: "#87ceeb",
+		ambientIntensity: 0.5,
+		sunIntensity: 1.0,
+		sunColor: "#ffffff",
+		sunPosition: { x: 100, y: 200, z: 100 },
+	},
+	spawn: {
+		position: { x: 0, y: 100, z: 0 },
+	},
+
+	setup: setup as any,
+	tick: tick as any,
+	applySettings: applySettings as any,
+	updatePlayer: updatePlayer as any,
+	dispose: dispose as any,
 };

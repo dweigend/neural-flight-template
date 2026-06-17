@@ -1,57 +1,19 @@
-import type * as THREE from "three";
-import type { FlightPlayer } from "$lib/three/player";
 import type { ExperienceState } from "../types";
-import { BERLIN_DEFAULT_SETTINGS, BERLIN_TILE_RUNTIME } from "./constants";
-import type { BerlinStatusIndicator } from "./debug/status-indicator";
-import type {
-  TilesRuntimeAdapter,
-  TilesRuntimeStatus,
-} from "./runtime/tiles-runtime";
+import type { TilesRenderer } from "3d-tiles-renderer";
+import type { Group } from "three";
 
-export type BerlinTileRuntimeChoice = typeof BERLIN_TILE_RUNTIME.id;
-
-export interface BerlinExperienceSettings {
-  baseSpeed: number;
-  showPlaceholder: boolean;
-}
-
-export interface BerlinPlaceholderResources {
-  group: THREE.Group;
-  geometry: THREE.BufferGeometry;
-  material: THREE.LineBasicMaterial;
-}
-
-export interface BerlinTilesLoadState {
-  status: TilesRuntimeStatus;
-  isReady: boolean;
-  errorMessage: string | null;
-}
-
-export interface BerlinFlightState extends ExperienceState {
-  camera: THREE.PerspectiveCamera;
-  renderer: THREE.WebGLRenderer;
-  player: FlightPlayer;
-  root: THREE.Group;
-  placeholder: BerlinPlaceholderResources;
-  statusIndicator: BerlinStatusIndicator;
-  tilesRuntime: TilesRuntimeAdapter;
-  tilesLoad: BerlinTilesLoadState;
-  settings: BerlinExperienceSettings;
-  runtimeChoice: BerlinTileRuntimeChoice;
-  isDisposed: boolean;
-}
-
-export function createDefaultBerlinSettings(): BerlinExperienceSettings {
-  return {
-    baseSpeed: BERLIN_DEFAULT_SETTINGS.baseSpeed,
-    showPlaceholder: BERLIN_DEFAULT_SETTINGS.showPlaceholder,
-  };
-}
-
-export function createInitialTilesLoadState(): BerlinTilesLoadState {
-  return {
-    status: "idle",
-    isReady: false,
-    errorMessage: null,
-  };
+/**
+ * Berlin Flight Experience State
+ */
+export interface BerlinState extends ExperienceState {
+	/** The 3D Tiles renderer instance */
+	tiles: TilesRenderer | null;
+	/** Group containing all tiles for easy management */
+	tilesGroup: Group;
+	/** Current flight speed */
+	speed: number;
+	/** Target flight speed */
+	targetSpeed: number;
+	/** Whether tiles are currently loading */
+	isLoading: boolean;
 }

@@ -1,64 +1,19 @@
-import type { ExperienceState } from "../types";
-import type { BerlinFlightState } from "./types";
+import type { BerlinState } from "./types";
 
+/**
+ * Updates player physics and movement for Berlin
+ */
 export function updatePlayer(
-	orientation: { pitch: number; roll: number },
+	_orientation: { pitch: number; roll: number },
 	speed: { accelerate: boolean; brake: boolean },
-	state: ExperienceState,
-	_delta: number,
+	state: BerlinState,
+	delta: number,
 ): void {
-	const s = state as BerlinFlightState;
-	if (s.isDisposed) return;
+	// Simple acceleration/braking logic
+	const accel = speed.accelerate ? 2.0 : speed.brake ? -4.0 : -0.5;
+	state.speed = Math.max(0, state.speed + accel * delta);
 
-	s.player.updateOrientation({
-		type: "orientation",
-		pitch: orientation.pitch,
-		roll: orientation.roll,
-		timestamp: 0,
-	});
-
-	if (speed.accelerate) {
-		s.player.updateSpeed({
-			type: "speed",
-			action: "accelerate",
-			active: true,
-			timestamp: 0,
-		});
-		s.player.updateSpeed({
-			type: "speed",
-			action: "brake",
-			active: false,
-			timestamp: 0,
-		});
-		return;
-	}
-
-	if (speed.brake) {
-		s.player.updateSpeed({
-			type: "speed",
-			action: "accelerate",
-			active: false,
-			timestamp: 0,
-		});
-		s.player.updateSpeed({
-			type: "speed",
-			action: "brake",
-			active: true,
-			timestamp: 0,
-		});
-		return;
-	}
-
-	s.player.updateSpeed({
-		type: "speed",
-		action: "accelerate",
-		active: false,
-		timestamp: 0,
-	});
-	s.player.updateSpeed({
-		type: "speed",
-		action: "brake",
-		active: false,
-		timestamp: 0,
-	});
+	// We don't update position here directly,
+	// the platform handles camera movement based on orientation.
+	// We just manage experience-specific player state.
 }

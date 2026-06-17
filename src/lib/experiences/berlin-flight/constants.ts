@@ -1,34 +1,15 @@
-export const BERLIN_EXPERIENCE_ID = "berlin-flight";
+import { PUBLIC_CESIUM_ION_TOKEN, PUBLIC_BERLIN_ION_ASSET_ID } from '$env/static/public';
 
-export const BERLIN_TILE_RUNTIME = {
-  id: "3d-tiles-renderer",
-  packageName: "3d-tiles-renderer",
-  moduleUrl: "https://esm.sh/3d-tiles-renderer",
-  reason: "Best fit for a Three.js + WebXR + WebGL phase-1 runtime.",
-} as const;
+/**
+ * Berlin Flight Experience Constants
+ */
+export const BERLIN_CESIUM_ION_TOKEN = PUBLIC_CESIUM_ION_TOKEN;
+export const BERLIN_ION_ASSET_ID = Number(PUBLIC_BERLIN_ION_ASSET_ID);
 
-export const BERLIN_CAMERA = {
-  fov: 75,
-  near: 0.1,
-  far: 2000,
-} as const;
-
-export const BERLIN_SCENE = {
-  background: "#0c1020",
-  fogColor: "#0c1020",
-  fogNear: 100,
-  fogFar: 1200,
-  ambientIntensity: 0.4,
-  sunIntensity: 1.2,
-  sunColor: "#ffffff",
-  sunPosition: { x: 80, y: 120, z: 60 },
-} as const;
-
-export const BERLIN_SPAWN = {
-  position: { x: 0, y: 120, z: 0 },
-} as const;
-
-export const BERLIN_DEFAULT_SETTINGS = {
-  baseSpeed: 12,
-  showPlaceholder: false,
-} as const;
+// Berlin Mitte Center (approximate)
+// These will be refined in Phase 2
+export const BERLIN_MITTE_COORDINATES = {
+	lat: 52.5200,
+	lon: 13.4050,
+	height: 0
+};
