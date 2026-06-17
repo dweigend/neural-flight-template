@@ -4,16 +4,32 @@ import type { BerlinState } from "./types";
  * Updates player physics and movement for Berlin
  */
 export function updatePlayer(
-	_orientation: { pitch: number; roll: number },
-	speed: { accelerate: boolean; brake: boolean },
-	state: BerlinState,
-	delta: number,
+  orientation: { pitch: number; roll: number },
+  speed: { accelerate: boolean; brake: boolean },
+  state: BerlinState,
+  _delta: number,
 ): void {
-	// Simple acceleration/braking logic
-	const accel = speed.accelerate ? 2.0 : speed.brake ? -4.0 : -0.5;
-	state.speed = Math.max(0, state.speed + accel * delta);
+  const timestamp = Date.now();
 
-	// We don't update position here directly,
-	// the platform handles camera movement based on orientation.
-	// We just manage experience-specific player state.
+  // Pass orientation to the FlightPlayer instance
+  state.player.updateOrientation({
+    type: "orientation",
+    pitch: orientation.pitch,
+    roll: orientation.roll,
+    timestamp,
+  });
+
+  // Pass speed commands to the FlightPlayer instance
+  state.player.updateSpeed({
+    type: "speed",
+    action: "accelerate",
+    active: speed.accelerate,
+    timestamp,
+  });
+  state.player.updateSpeed({
+    type: "speed",
+    action: "brake",
+    active: speed.brake,
+    timestamp,
+  });
 }

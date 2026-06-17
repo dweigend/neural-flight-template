@@ -1,3 +1,4 @@
+import type { FlightPlayer } from "$lib/three/player";
 import type { ExperienceState } from "../types";
 import type { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import type * as THREE from "three";
@@ -14,6 +15,8 @@ export interface BerlinState extends ExperienceState {
   renderer: THREE.WebGLRenderer;
   /** The camera used for rendering */
   camera: THREE.PerspectiveCamera;
+  /** The flight player controller */
+  player: FlightPlayer;
   /** Current flight speed */
   speed: number;
   /** Target flight speed */

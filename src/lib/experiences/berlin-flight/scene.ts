@@ -4,6 +4,8 @@ import type { BerlinState } from "./types";
 import { createTilesRuntime } from "./runtime/tiles-runtime";
 import { getBerlinTilesetUrl } from "./runtime/tiles-source";
 import { BERLIN_MITTE_ORIGIN, geoToECEF } from "./geo";
+import { FlightPlayer } from "$lib/three/player";
+import { CAMERA, FLIGHT } from "$lib/config/flight";
 
 /**
  * Initializes the Berlin scene
@@ -12,14 +14,26 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   const tilesGroup = new THREE.Group();
   ctx.scene.add(tilesGroup);
 
+  // Player (creates own camera + rig)
+  const player = new FlightPlayer({
+    fov: CAMERA.FOV,
+    near: CAMERA.NEAR,
+    far: 10000, // Increased for city scale
+    spawnPosition: { x: 0, y: 100, z: 0 },
+    baseSpeed: FLIGHT.BASE_SPEED,
+    terrainSlowdown: 1.0, // No terrain slowdown for tiles yet
+  });
+  ctx.scene.add(player.rig);
+
   // Initial state
   const state: BerlinState = {
     tilesRuntime: null,
     tilesGroup,
     renderer: ctx.renderer,
-    camera: ctx.camera,
+    camera: player.camera,
+    player,
     speed: 0,
-    targetSpeed: 5,
+    targetSpeed: 10,
     isLoading: true,
   };
 
@@ -33,23 +47,13 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
       const tiles = await runtime.loadTiles(tilesGroup);
 
       // Position the tileset relative to Berlin Mitte
-      // 1. Convert origin to ECEF
       const originECEF = geoToECEF(BERLIN_MITTE_ORIGIN);
-
-      // 2. Offset the tileset group
-      // Note: 3d-tiles-renderer's internal group is in ECEF.
-      // We subtract our origin to bring Berlin Mitte to (0,0,0).
       tiles.group.position.set(-originECEF.x, -originECEF.y, -originECEF.z);
 
-      // 3. Rotate to align ECEF "Up" with Three.js "Up" (+Y)
-      // This is a simplification; for Phase 4 smoke test, we'll see if this is enough.
-      // Usually requires a more complex matrix rotation.
+      // Rotate to align ECEF "Up" with Three.js "Up" (+Y)
       tiles.group.rotation.x = -Math.PI / 2;
 
-      console.log(
-        "[BerlinFlight] Tileset loaded and positioned at:",
-        originECEF,
-      );
+      console.log("[BerlinFlight] Tileset loaded and positioned.");
     } catch (error) {
       console.error("[BerlinFlight] Failed to load tileset:", error);
     } finally {
@@ -57,9 +61,9 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     }
   }
 
-  // Placeholder: Add a simple grid for reference
-  const grid = new THREE.GridHelper(1000, 100);
-  grid.position.y = -1; // Slightly below "ground"
+  // Reference grid
+  const grid = new THREE.GridHelper(2000, 100);
+  grid.position.y = -1;
   ctx.scene.add(grid);
 
   return state;
@@ -69,25 +73,33 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
  * Updates the scene every frame
  */
 export function tick(state: BerlinState, ctx: TickContext) {
+  const s = state as BerlinState;
+
+  // Update player physics
+  s.player.tick(ctx.delta);
+
   // Update tiles if they exist
-  if (state.tilesRuntime) {
-    state.tilesRuntime.update(ctx.camera, state.renderer);
+  if (s.tilesRuntime) {
+    s.tilesRuntime.update(ctx.camera, s.renderer);
   }
 
-  return { state };
+  return { state: s };
 }
 
 /**
  * Cleans up resources
  */
 export function dispose(state: BerlinState, scene: THREE.Scene): void {
-  if (state.tilesRuntime) {
-    state.tilesRuntime.dispose();
+  const s = state as BerlinState;
+
+  if (s.tilesRuntime) {
+    s.tilesRuntime.dispose();
   }
 
-  scene.remove(state.tilesGroup);
+  scene.remove(s.tilesGroup);
+  scene.remove(s.player.rig);
 
-  state.tilesGroup.traverse((object) => {
+  s.tilesGroup.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.geometry.dispose();
       if (Array.isArray(object.material)) {
