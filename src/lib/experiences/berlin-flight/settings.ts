@@ -1,4 +1,5 @@
 import type { Scene } from "three";
+import { setBerlinDebugEnabled } from "./debug/controller";
 import type { BerlinState } from "./types";
 
 /**
@@ -17,10 +18,8 @@ export function applySettings(
       break;
     case "debugOverlay": {
       if (typeof value !== "boolean") return;
-      if (state.debugEnabled === value) return;
 
-      state.debugEnabled = value;
-      state.debugOverlay?.setEnabled(value);
+      setBerlinDebugEnabled(state, value);
       break;
     }
     default:

@@ -8,7 +8,6 @@ import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
 
 export interface BerlinDebugOverlay {
-  setEnabled(enabled: boolean): void;
   update(state: BerlinState, elapsed: number): void;
   dispose(): void;
 }
@@ -27,9 +26,8 @@ const SPRITE_POSITION = {
 
 export function createBerlinDebugOverlay(
   camera: THREE.PerspectiveCamera,
-  enabled: boolean,
 ): BerlinDebugOverlay {
-  return new CanvasDebugOverlay(camera, enabled);
+  return new CanvasDebugOverlay(camera);
 }
 
 class CanvasDebugOverlay implements BerlinDebugOverlay {
@@ -47,11 +45,10 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     activeTiles: 0,
   };
 
-  private enabled = false;
   private disposed = false;
   private nextUpdate = 0;
 
-  constructor(camera: THREE.PerspectiveCamera, enabled: boolean) {
+  constructor(camera: THREE.PerspectiveCamera) {
     this.canvas = document.createElement("canvas");
     this.canvas.width = BERLIN_DEBUG_OVERLAY_WIDTH;
     this.canvas.height = BERLIN_DEBUG_OVERLAY_HEIGHT;
@@ -82,22 +79,10 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     );
     this.sprite.scale.set(SPRITE_SCALE.x, SPRITE_SCALE.y, SPRITE_SCALE.z);
     camera.add(this.sprite);
-
-    this.setEnabled(enabled);
-  }
-
-  public setEnabled(enabled: boolean): void {
-    if (this.disposed) return;
-    if (this.enabled === enabled) return;
-
-    this.enabled = enabled;
-    this.sprite.visible = enabled;
-    this.nextUpdate = 0;
   }
 
   public update(state: BerlinState, elapsed: number): void {
     if (this.disposed) return;
-    if (!this.enabled) return;
     if (elapsed < this.nextUpdate) return;
 
     this.nextUpdate = elapsed + BERLIN_DEBUG_OVERLAY_UPDATE_SECONDS;

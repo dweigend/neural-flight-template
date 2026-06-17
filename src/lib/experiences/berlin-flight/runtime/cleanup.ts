@@ -1,13 +1,20 @@
 import * as THREE from "three";
 
+type DisposableObject = THREE.Object3D & {
+  geometry?: THREE.BufferGeometry;
+  material?: THREE.Material | THREE.Material[];
+};
+
 export function disposeObjectTree(root: THREE.Object3D | null): void {
   if (!root) return;
 
   root.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return;
+    const disposable = object as DisposableObject;
 
-    object.geometry.dispose();
-    disposeMaterial(object.material);
+    disposable.geometry?.dispose();
+    if (!disposable.material) return;
+
+    disposeMaterial(disposable.material);
   });
 }
 

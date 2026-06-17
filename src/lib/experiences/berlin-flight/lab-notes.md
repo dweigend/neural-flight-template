@@ -143,6 +143,8 @@ Cons:
 - use early exits in update and visibility logic
 - expect aggressive culling and modest LOD settings
 
+*Update Phase 8:* The Berlin runtime keeps debug tooling opt-in and lazy-created. When the debug overlay is disabled, no canvas texture, sprite, or overlay update path is active. Tile runtime updates still run every frame while visible because screen-space error and tile selection depend on the current VR camera; any future throttling should be guarded by headset testing to avoid visible LOD lag. The debug overlay is intentionally throttled to a low refresh rate and should remain a diagnostic aid, not a default VR feature.
+
 ### Lifecycle and cleanup
 Every runtime helper created in later phases should expose explicit cleanup:
 - stop async work when the scene is torn down

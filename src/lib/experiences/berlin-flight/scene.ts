@@ -6,8 +6,8 @@ import {
   resolveBerlinTileset,
   isSourceConfigured,
 } from "./runtime/tiles-source";
+import { setBerlinDebugEnabled } from "./debug/controller";
 import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
-import { createBerlinDebugOverlay } from "./debug/overlay";
 import { BERLIN_MITTE_ORIGIN, getECEFToLocalMatrix } from "./geo";
 import { disposeObjectTree, removeFromParent } from "./runtime/cleanup";
 import { FlightPlayer } from "$lib/three/player";
@@ -40,11 +40,6 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   gridHelper.position.y = -1;
   sceneRoot.add(gridHelper);
 
-  const debugOverlay = createBerlinDebugOverlay(
-    player.camera,
-    BERLIN_DEBUG_OVERLAY_DEFAULT,
-  );
-
   // Initial state
   const state: BerlinState = {
     sceneRoot,
@@ -57,12 +52,13 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     speed: 0,
     targetSpeed: 10,
     isLoading: true,
-    debugEnabled: BERLIN_DEBUG_OVERLAY_DEFAULT,
-    debugOverlay,
+    debugEnabled: false,
+    debugOverlay: null,
     isDisposed: false,
     abortController: new AbortController(),
   };
 
+  setBerlinDebugEnabled(state, BERLIN_DEBUG_OVERLAY_DEFAULT);
   void loadTilesWhenConfigured(state);
 
   return state;
@@ -84,7 +80,9 @@ export function tick(state: BerlinState, ctx: TickContext) {
     s.tilesRuntime.update(ctx.camera, s.renderer);
   }
 
-  s.debugOverlay?.update(s, ctx.elapsed);
+  if (s.debugEnabled) {
+    s.debugOverlay?.update(s, ctx.elapsed);
+  }
 
   return { state: s };
 }
