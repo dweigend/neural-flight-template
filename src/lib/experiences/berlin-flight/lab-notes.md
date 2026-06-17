@@ -82,16 +82,23 @@ This is the **phase-1 target architecture**.
 
 ---
 ## Candidate Three-compatible 3D Tiles runtimes to evaluate next
-### 1. `3d-tiles-renderer`
-Best first candidate because it is purpose-built for 3D Tiles in Three.js and appears closest to our runtime needs.
+### Decision: evaluate `3d-tiles-renderer` first
+`3d-tiles-renderer` is the first runtime to evaluate for Cesium ion-hosted 3D Tiles because it is purpose-built for rendering 3D Tiles inside Three.js while preserving our WebXR + WebGL ownership model.
 
-Evaluate:
+Evaluation focus:
+- loading Cesium ion-hosted tiles without CesiumJS `Viewer`
 - WebXR/browser compatibility
 - maintenance and API stability
-- disposal model for tile-owned resources
+- explicit disposal for tile-owned resources
 - Quest-class performance behavior
 
-### 2. `@loaders.gl/tiles` with Three integration glue
+Adapter boundary:
+- experience code should call the local `runtime/tiles-runtime.ts` interface
+- loader-specific imports and setup should stay behind that adapter
+- if `3d-tiles-renderer` underperforms, the adapter should allow swapping to another loader without reshaping `scene.ts`
+
+### Alternative 1. `@loaders.gl/tiles` with Three integration glue
+
 Good fallback if we want a more modular parsing and streaming pipeline.
 
 Evaluate:
@@ -99,7 +106,7 @@ Evaluate:
 - whether flexibility is worth the extra complexity
 - runtime overhead in headset browsers
 
-### 3. NASA-AMMOS `3DTilesRendererJS` lineage / package variants
+### Alternative 2. NASA-AMMOS `3DTilesRendererJS` lineage / package variants
 Worth checking because this library family is commonly referenced for Three.js 3D Tiles rendering.
 
 Evaluate:
@@ -107,7 +114,7 @@ Evaluate:
 - whether it differs meaningfully from `3d-tiles-renderer`
 - whether docs/examples match modern Three versions
 
-### 4. Custom minimal loader stack
+### Alternative 3. Custom minimal loader stack
 Keep as a last-resort fallback only.
 
 Pros:
@@ -118,7 +125,7 @@ Cons:
 - highest engineering cost
 - highest culling, transform, and cleanup risk
 
-**Current bias:** start with **`3d-tiles-renderer`**, keep `@loaders.gl/tiles` as the strongest alternative, and consider a custom stack only if the packaged options fail.
+**Decision:** begin implementation experiments behind the local adapter with **`3d-tiles-renderer`**. Keep `@loaders.gl/tiles` as the strongest fallback and consider a custom stack only if packaged options fail.
 
 ---
 ## Phase-1 technical guardrails
@@ -157,6 +164,6 @@ For Berlin Mitte phase 1:
 - **Three.js** is the renderer
 - **WebXR + WebGL** is the target platform
 - **WebGPU is deferred**
-- runtime evaluation should begin with **`3d-tiles-renderer`**
+- runtime evaluation begins with **`3d-tiles-renderer`** behind `runtime/tiles-runtime.ts`
 
 If the next evaluation step shows poor maintenance, compatibility, or VR performance, we should reassess before building deeper experience scaffolding.
