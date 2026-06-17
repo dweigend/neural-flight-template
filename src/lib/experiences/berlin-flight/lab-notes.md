@@ -97,6 +97,11 @@ Adapter boundary:
 - loader-specific imports and setup should stay behind that adapter
 - if `3d-tiles-renderer` underperforms, the adapter should allow swapping to another loader without reshaping `scene.ts`
 
+Smoke-test config:
+- use `PUBLIC_BERLIN_TILES_URL` for a direct hosted tileset URL, or
+- use `PUBLIC_BERLIN_ION_ASSET_ID` with `PUBLIC_CESIUM_ION_TOKEN` to resolve a Cesium ion endpoint
+- the first pass loads `3d-tiles-renderer` through the local adapter boundary, not from `scene.ts`
+
 ### Alternative 1. `@loaders.gl/tiles` with Three integration glue
 
 Good fallback if we want a more modular parsing and streaming pipeline.
