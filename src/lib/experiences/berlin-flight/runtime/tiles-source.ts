@@ -1,21 +1,38 @@
 import { BERLIN_CESIUM_ION_TOKEN, BERLIN_ION_ASSET_ID } from "../constants";
 
 /**
- * Constructs the Cesium Ion 3D Tileset URL for Berlin.
+ * Resolves the Cesium Ion asset endpoint to get the actual tileset URL and access token.
  */
-export function getBerlinTilesetUrl(): string {
-	if (!BERLIN_CESIUM_ION_TOKEN || !BERLIN_ION_ASSET_ID) {
-		console.warn("[BerlinFlight] Missing Cesium Ion credentials in constants.ts");
-		return "";
-	}
+export async function resolveBerlinTileset(): Promise<{
+  url: string;
+  token: string;
+}> {
+  if (!BERLIN_CESIUM_ION_TOKEN || !BERLIN_ION_ASSET_ID) {
+    throw new Error(
+      "[BerlinFlight] Missing Cesium Ion credentials in constants.ts",
+    );
+  }
 
-	// Standard Cesium Ion 3D Tiles endpoint
-	return `https://assets.ion.cesium.com/${BERLIN_ION_ASSET_ID}/tileset.json?access_token=${BERLIN_CESIUM_ION_TOKEN}`;
+  const endpoint = `https://api.cesium.com/v1/assets/${BERLIN_ION_ASSET_ID}/endpoint?access_token=${BERLIN_CESIUM_ION_TOKEN}`;
+
+  const response = await fetch(endpoint);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `[BerlinFlight] Failed to resolve Cesium Ion asset: ${response.status} ${errorText}`,
+    );
+  }
+
+  const data = await response.json();
+  return {
+    url: data.url,
+    token: data.accessToken,
+  };
 }
 
 /**
- * Helper to check if the source is ready
+ * Helper to check if the source is configured
  */
-export function isSourceReady(): boolean {
-	return Boolean(BERLIN_CESIUM_ION_TOKEN && BERLIN_ION_ASSET_ID);
+export function isSourceConfigured(): boolean {
+  return Boolean(BERLIN_CESIUM_ION_TOKEN && BERLIN_ION_ASSET_ID);
 }

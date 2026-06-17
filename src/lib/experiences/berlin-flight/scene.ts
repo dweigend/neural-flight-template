@@ -2,7 +2,10 @@ import * as THREE from "three";
 import type { SetupContext, TickContext } from "../types";
 import type { BerlinState } from "./types";
 import { createTilesRuntime } from "./runtime/tiles-runtime";
-import { getBerlinTilesetUrl } from "./runtime/tiles-source";
+import {
+  resolveBerlinTileset,
+  isSourceConfigured,
+} from "./runtime/tiles-source";
 import { BERLIN_MITTE_ORIGIN, geoToECEF } from "./geo";
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA, FLIGHT } from "$lib/config/flight";
@@ -38,27 +41,30 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   };
 
   // Initialize 3D Tiles
-  const url = getBerlinTilesetUrl();
-  if (url) {
-    const runtime = createTilesRuntime(url);
-    state.tilesRuntime = runtime;
+  if (isSourceConfigured()) {
+    resolveBerlinTileset()
+      .then(async ({ url, token }) => {
+        const runtime = createTilesRuntime(url, token);
+        state.tilesRuntime = runtime;
 
-    try {
-      const tiles = await runtime.loadTiles(tilesGroup);
+        const tiles = await runtime.loadTiles(tilesGroup);
 
-      // Position the tileset relative to Berlin Mitte
-      const originECEF = geoToECEF(BERLIN_MITTE_ORIGIN);
-      tiles.group.position.set(-originECEF.x, -originECEF.y, -originECEF.z);
+        // Position the tileset relative to Berlin Mitte
+        const originECEF = geoToECEF(BERLIN_MITTE_ORIGIN);
+        tiles.group.position.set(-originECEF.x, -originECEF.y, -originECEF.z);
 
-      // Rotate to align ECEF "Up" with Three.js "Up" (+Y)
-      tiles.group.rotation.x = -Math.PI / 2;
+        // Rotate to align ECEF "Up" with Three.js "Up" (+Y)
+        tiles.group.rotation.x = -Math.PI / 2;
 
-      console.log("[BerlinFlight] Tileset loaded and positioned.");
-    } catch (error) {
-      console.error("[BerlinFlight] Failed to load tileset:", error);
-    } finally {
-      state.isLoading = false;
-    }
+        console.log("[BerlinFlight] Tileset loaded and positioned.");
+        state.isLoading = false;
+      })
+      .catch((error) => {
+        console.error("[BerlinFlight] Failed to load tileset:", error);
+        state.isLoading = false;
+      });
+  } else {
+    state.isLoading = false;
   }
 
   // Reference grid

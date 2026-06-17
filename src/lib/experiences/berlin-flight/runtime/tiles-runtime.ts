@@ -6,70 +6,83 @@ import type { Camera, WebGLRenderer, Group } from "three";
  * This isolates the specific loader (3d-tiles-renderer) from the experience logic.
  */
 export class TilesRuntimeAdapter {
-	private renderer: TilesRenderer | null = null;
-	private url: string;
+  private renderer: TilesRenderer | null = null;
+  private url: string;
+  private token: string;
 
-	constructor(url: string) {
-		this.url = url;
-	}
+  constructor(url: string, token: string) {
+    this.url = url;
+    this.token = token;
+  }
 
-	/**
-	 * Initializes and loads the tileset.
-	 */
-	public async loadTiles(group: Group): Promise<TilesRenderer> {
-		if (this.renderer) {
-			return this.renderer;
-		}
+  /**
+   * Initializes and loads the tileset.
+   */
+  public async loadTiles(group: Group): Promise<TilesRenderer> {
+    if (this.renderer) {
+      return this.renderer;
+    }
 
-		try {
-			this.renderer = new TilesRenderer(this.url);
+    try {
+      this.renderer = new TilesRenderer(this.url);
 
-			// Add the tileset to the provided group
-			group.add(this.renderer.group);
+      // Pass the access token in the headers for all tile requests
+      this.renderer.fetchOptions.headers = {
+        Authorization: `Bearer ${this.token}`,
+      };
 
-			// Basic configuration
-			this.renderer.errorTarget = 6; // Balance between quality and performance
+      // Add the tileset to the provided group
+      group.add(this.renderer.group);
 
-			console.log("[BerlinFlight] 3D Tiles renderer initialized for:", this.url);
-			return this.renderer;
-		} catch (error) {
-			console.error("[BerlinFlight] Failed to initialize 3D Tiles renderer:", error);
-			throw error;
-		}
-	}
+      // Basic configuration for VR performance
+      this.renderer.errorTarget = 12; // Higher value = lower quality, better performance
 
-	/**
-	 * Updates the tileset every frame.
-	 */
-	public update(camera: Camera, webglRenderer: WebGLRenderer): void {
-		if (!this.renderer) return;
+      console.log("[BerlinFlight] 3D Tiles renderer initialized.");
+      return this.renderer;
+    } catch (error) {
+      console.error(
+        "[BerlinFlight] Failed to initialize 3D Tiles renderer:",
+        error,
+      );
+      throw error;
+    }
+  }
 
-		this.renderer.setCamera(camera);
-		this.renderer.setResolutionFromRenderer(camera, webglRenderer);
-		this.renderer.update();
-	}
+  /**
+   * Updates the tileset every frame.
+   */
+  public update(camera: Camera, webglRenderer: WebGLRenderer): void {
+    if (!this.renderer) return;
 
-	/**
-	 * Cleans up resources.
-	 */
-	public dispose(): void {
-		if (this.renderer) {
-			this.renderer.dispose();
-			this.renderer = null;
-		}
-	}
+    this.renderer.setCamera(camera);
+    this.renderer.setResolutionFromRenderer(camera, webglRenderer);
+    this.renderer.update();
+  }
 
-	/**
-	 * Returns the underlying renderer instance.
-	 */
-	public getRenderer(): TilesRenderer | null {
-		return this.renderer;
-	}
+  /**
+   * Cleans up resources.
+   */
+  public dispose(): void {
+    if (this.renderer) {
+      this.renderer.dispose();
+      this.renderer = null;
+    }
+  }
+
+  /**
+   * Returns the underlying renderer instance.
+   */
+  public getRenderer(): TilesRenderer | null {
+    return this.renderer;
+  }
 }
 
 /**
  * Factory function to create a tiles runtime.
  */
-export function createTilesRuntime(url: string): TilesRuntimeAdapter {
-	return new TilesRuntimeAdapter(url);
+export function createTilesRuntime(
+  url: string,
+  token: string,
+): TilesRuntimeAdapter {
+  return new TilesRuntimeAdapter(url, token);
 }
