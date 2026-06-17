@@ -1,4 +1,7 @@
-import { BERLIN_MITTE_ORIGIN, METERS_PER_DEGREE_LAT } from "./berlin-mitte-origin";
+import {
+  BERLIN_MITTE_ORIGIN,
+  METERS_PER_DEGREE_LAT,
+} from "./berlin-mitte-origin";
 import type { GeoPoint, WorldPoint } from "./types";
 
 /**
@@ -10,32 +13,43 @@ import type { GeoPoint, WorldPoint } from "./types";
  * - Z: North/South (Positive South - Three.js default)
  */
 export function geoToWorld(point: GeoPoint): WorldPoint {
-	const latRad = (BERLIN_MITTE_ORIGIN.lat * Math.PI) / 180;
+  const latRad = (BERLIN_MITTE_ORIGIN.lat * Math.PI) / 180;
 
-	// Meters per degree longitude decreases as we move away from the equator
-	const metersPerDegreeLon = METERS_PER_DEGREE_LAT * Math.cos(latRad);
+  // Meters per degree longitude decreases as we move away from the equator
+  const metersPerDegreeLon = METERS_PER_DEGREE_LAT * Math.cos(latRad);
 
-	const dx = (point.lon - BERLIN_MITTE_ORIGIN.lon) * metersPerDegreeLon;
-	const dz = (point.lat - BERLIN_MITTE_ORIGIN.lat) * METERS_PER_DEGREE_LAT;
-	const dy = point.height - BERLIN_MITTE_ORIGIN.height;
+  const dx = (point.lon - BERLIN_MITTE_ORIGIN.lon) * metersPerDegreeLon;
+  const dz = (point.lat - BERLIN_MITTE_ORIGIN.lat) * METERS_PER_DEGREE_LAT;
+  const dy = point.height - BERLIN_MITTE_ORIGIN.height;
 
-	return {
-		x: dx,
-		y: dy,
-		z: -dz, // Invert Z for Three.js (Forward is -Z)
-	};
+  return {
+    x: dx,
+    y: dy,
+    z: -dz, // Invert Z for Three.js (Forward is -Z)
+  };
 }
 
 /**
- * Converts local world-space meters back to geographic coordinates.
+ * Converts geographic coordinates (WGS84) to ECEF (Earth-Centered, Earth-Fixed).
  */
-export function worldToGeo(point: WorldPoint): GeoPoint {
-	const latRad = (BERLIN_MITTE_ORIGIN.lat * Math.PI) / 180;
-	const metersPerDegreeLon = METERS_PER_DEGREE_LAT * Math.cos(latRad);
+export function geoToECEF(point: GeoPoint): WorldPoint {
+  const latRad = (point.lat * Math.PI) / 180;
+  const lonRad = (point.lon * Math.PI) / 180;
 
-	const lon = BERLIN_MITTE_ORIGIN.lon + point.x / metersPerDegreeLon;
-	const lat = BERLIN_MITTE_ORIGIN.lat + (-point.z) / METERS_PER_DEGREE_LAT;
-	const height = BERLIN_MITTE_ORIGIN.height + point.y;
+  const a = 6378137.0; // WGS84 semi-major axis
+  const f = 1 / 298.257223563; // WGS84 flattening
+  const e2 = 2 * f - f * f; // Square of eccentricity
 
-	return { lat, lon, height };
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinLon = Math.sin(lonRad);
+  const cosLon = Math.cos(lonRad);
+
+  const N = a / Math.sqrt(1 - e2 * sinLat * sinLat);
+
+  return {
+    x: (N + point.height) * cosLat * cosLon,
+    y: (N + point.height) * cosLat * sinLon,
+    z: (N * (1 - e2) + point.height) * sinLat,
+  };
 }
