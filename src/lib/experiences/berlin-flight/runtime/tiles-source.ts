@@ -24,6 +24,10 @@ export async function resolveBerlinTileset(): Promise<{
   }
 
   const data = await response.json();
+  if (!data.url) {
+    throw new Error("[BerlinFlight] Cesium Ion response missing tileset URL");
+  }
+
   return {
     url: data.url,
     token: data.accessToken,

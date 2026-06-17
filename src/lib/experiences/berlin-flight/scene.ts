@@ -44,6 +44,9 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   if (isSourceConfigured()) {
     resolveBerlinTileset()
       .then(async ({ url, token }) => {
+        console.log("[BerlinFlight] Resolved tileset URL:", url);
+        console.log("[BerlinFlight] Token length:", token?.length ?? 0);
+
         const runtime = createTilesRuntime(url, token);
         state.tilesRuntime = runtime;
 

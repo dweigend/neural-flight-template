@@ -23,13 +23,23 @@ export class TilesRuntimeAdapter {
       return this.renderer;
     }
 
+    if (!this.url) {
+      throw new Error("[BerlinFlight] Cannot load tiles: URL is null or empty");
+    }
+
     try {
+      console.log(
+        "[BerlinFlight] Initializing TilesRenderer with URL:",
+        this.url,
+      );
       this.renderer = new TilesRenderer(this.url);
 
       // Pass the access token in the headers for all tile requests
-      this.renderer.fetchOptions.headers = {
-        Authorization: `Bearer ${this.token}`,
-      };
+      if (this.token) {
+        this.renderer.fetchOptions.headers = {
+          Authorization: `Bearer ${this.token}`,
+        };
+      }
 
       // Add the tileset to the provided group
       group.add(this.renderer.group);
