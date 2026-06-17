@@ -17,6 +17,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     tilesRuntime: null,
     tilesGroup,
     renderer: ctx.renderer,
+    camera: ctx.camera,
     speed: 0,
     targetSpeed: 5,
     isLoading: true,

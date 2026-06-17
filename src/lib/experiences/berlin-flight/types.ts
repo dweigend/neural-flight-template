@@ -12,6 +12,8 @@ export interface BerlinState extends ExperienceState {
   tilesGroup: THREE.Group;
   /** The renderer instance for tiles resolution updates */
   renderer: THREE.WebGLRenderer;
+  /** The camera used for rendering */
+  camera: THREE.PerspectiveCamera;
   /** Current flight speed */
   speed: number;
   /** Target flight speed */
