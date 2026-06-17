@@ -30,6 +30,241 @@ export const CONTROLS = {
 	},
 } as const;
 
+export const M5_BRIDGE = {
+	QUALITY_THRESHOLD: 0.5,
+	DEADZONE_DEGREES: 1.5,
+	PITCH_DEADZONE_DEGREES: 1.5,
+	ROLL_DEADZONE_DEGREES: 1.5,
+	SMOOTHING_ALPHA: 1,
+	SMOOTHING_AMOUNT: 0,
+	PITCH_SCALE: 1,
+	ROLL_SCALE: 1,
+	INVERT_PITCH: false,
+	INVERT_ROLL: false,
+	MOUNTING_PITCH_USES_ROLL: false,
+	MOUNTING_ROLL_USES_PITCH: false,
+	PITCH_RANGE: CONTROLS.PITCH_RANGE,
+	ROLL_RANGE: CONTROLS.ROLL_RANGE,
+	STALE_TIMEOUT_MS: 3000,
+} as const;
+
+export interface M5BridgeRuntimeConfig {
+	qualityThreshold: number;
+	deadzoneDegrees: number;
+	pitchDeadzoneDegrees: number;
+	rollDeadzoneDegrees: number;
+	smoothingAlpha: number;
+	smoothingAmount: number;
+	pitchScale: number;
+	rollScale: number;
+	invertPitch: boolean;
+	invertRoll: boolean;
+	mountingPitchUsesRoll: boolean;
+	mountingRollUsesPitch: boolean;
+	maxPitch: number;
+	maxRoll: number;
+	staleTimeoutMs: number;
+	calibrationEnabled: boolean;
+	calibrationNeutralPitch: number;
+	calibrationNeutralRoll: number;
+	calibrationUpPitch: number;
+	calibrationDownPitch: number;
+	calibrationRightRoll: number;
+	calibrationLeftRoll: number;
+	calibrationPitchUsesRoll: boolean;
+	calibrationRollUsesPitch: boolean;
+}
+
+interface M5BridgeConfigGlobal {
+	__neuralFlightM5BridgeRuntimeConfig?: M5BridgeRuntimeConfig;
+}
+
+function createM5BridgeDefaults(): M5BridgeRuntimeConfig {
+	return {
+		qualityThreshold: M5_BRIDGE.QUALITY_THRESHOLD,
+		deadzoneDegrees: M5_BRIDGE.DEADZONE_DEGREES,
+		pitchDeadzoneDegrees: M5_BRIDGE.PITCH_DEADZONE_DEGREES,
+		rollDeadzoneDegrees: M5_BRIDGE.ROLL_DEADZONE_DEGREES,
+		smoothingAlpha: M5_BRIDGE.SMOOTHING_ALPHA,
+		smoothingAmount: M5_BRIDGE.SMOOTHING_AMOUNT,
+		pitchScale: M5_BRIDGE.PITCH_SCALE,
+		rollScale: M5_BRIDGE.ROLL_SCALE,
+		invertPitch: M5_BRIDGE.INVERT_PITCH,
+		invertRoll: M5_BRIDGE.INVERT_ROLL,
+		mountingPitchUsesRoll: M5_BRIDGE.MOUNTING_PITCH_USES_ROLL,
+		mountingRollUsesPitch: M5_BRIDGE.MOUNTING_ROLL_USES_PITCH,
+		maxPitch: M5_BRIDGE.PITCH_RANGE[1],
+		maxRoll: M5_BRIDGE.ROLL_RANGE[1],
+		staleTimeoutMs: M5_BRIDGE.STALE_TIMEOUT_MS,
+		calibrationEnabled: false,
+		calibrationNeutralPitch: 0,
+		calibrationNeutralRoll: 0,
+		calibrationUpPitch: 0,
+		calibrationDownPitch: 0,
+		calibrationRightRoll: 0,
+		calibrationLeftRoll: 0,
+		calibrationPitchUsesRoll: false,
+		calibrationRollUsesPitch: false,
+	};
+}
+
+export const m5BridgeRuntimeConfig: M5BridgeRuntimeConfig =
+	readM5BridgeRuntimeConfig();
+
+export function getM5BridgeRuntimeConfig(): M5BridgeRuntimeConfig {
+	return { ...m5BridgeRuntimeConfig };
+}
+
+export function applyM5BridgeSettings(
+	settings: Record<string, number | boolean>,
+): void {
+	for (const [key, value] of Object.entries(settings)) {
+		switch (key) {
+			case "qualityThreshold":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.qualityThreshold = clamp(value, 0, 1);
+				}
+				break;
+			case "deadzoneDegrees":
+				if (typeof value === "number") {
+					const deadzone = clamp(value, 0, 15);
+					m5BridgeRuntimeConfig.deadzoneDegrees = deadzone;
+					m5BridgeRuntimeConfig.pitchDeadzoneDegrees = deadzone;
+					m5BridgeRuntimeConfig.rollDeadzoneDegrees = deadzone;
+				}
+				break;
+			case "pitchDeadzoneDegrees":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.pitchDeadzoneDegrees = clamp(value, 0, 15);
+				}
+				break;
+			case "rollDeadzoneDegrees":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.rollDeadzoneDegrees = clamp(value, 0, 15);
+				}
+				break;
+			case "smoothingAlpha":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.smoothingAlpha = clamp(value, 0.05, 1);
+					m5BridgeRuntimeConfig.smoothingAmount =
+						1 - m5BridgeRuntimeConfig.smoothingAlpha;
+				}
+				break;
+			case "smoothingAmount":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.smoothingAmount = clamp(value, 0, 0.95);
+					m5BridgeRuntimeConfig.smoothingAlpha =
+						1 - m5BridgeRuntimeConfig.smoothingAmount;
+				}
+				break;
+			case "pitchScale":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.pitchScale = clamp(value, 0.1, 3);
+				}
+				break;
+			case "rollScale":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.rollScale = clamp(value, 0.1, 3);
+				}
+				break;
+			case "invertPitch":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.invertPitch = value;
+				}
+				break;
+			case "invertRoll":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.invertRoll = value;
+				}
+				break;
+			case "mountingPitchUsesRoll":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.mountingPitchUsesRoll = value;
+				}
+				break;
+			case "mountingRollUsesPitch":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.mountingRollUsesPitch = value;
+				}
+				break;
+			case "maxPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.maxPitch = clamp(value, 5, 90);
+				}
+				break;
+			case "maxRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.maxRoll = clamp(value, 5, 90);
+				}
+				break;
+			case "staleTimeoutMs":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.staleTimeoutMs = clamp(value, 500, 10_000);
+				}
+				break;
+			case "calibrationEnabled":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.calibrationEnabled = value;
+				}
+				break;
+			case "calibrationNeutralPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationNeutralPitch = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationNeutralRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationNeutralRoll = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationUpPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationUpPitch = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationDownPitch":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationDownPitch = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationRightRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationRightRoll = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationLeftRoll":
+				if (typeof value === "number") {
+					m5BridgeRuntimeConfig.calibrationLeftRoll = clamp(value, -180, 180);
+				}
+				break;
+			case "calibrationPitchUsesRoll":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.calibrationPitchUsesRoll = value;
+				}
+				break;
+			case "calibrationRollUsesPitch":
+				if (typeof value === "boolean") {
+					m5BridgeRuntimeConfig.calibrationRollUsesPitch = value;
+				}
+				break;
+		}
+	}
+}
+
+export function resetM5BridgeSettings(): void {
+	Object.assign(m5BridgeRuntimeConfig, createM5BridgeDefaults());
+}
+
+function readM5BridgeRuntimeConfig(): M5BridgeRuntimeConfig {
+	const store = globalThis as typeof globalThis & M5BridgeConfigGlobal;
+	store.__neuralFlightM5BridgeRuntimeConfig ??= createM5BridgeDefaults();
+	return store.__neuralFlightM5BridgeRuntimeConfig;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+	return Math.max(minimum, Math.min(maximum, value));
+}
+
 // ── Rings (per chunk) ──
 export const RINGS = {
 	PER_CHUNK: 2,

@@ -3,13 +3,19 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { WebSocketServer } from "ws";
-import { handleConnection } from "./src/lib/ws/server";
+import { broadcastMessage, handleConnection } from "./src/lib/ws/server";
+import { startM5Bridge } from "./src/lib/ws/server-m5-bridge";
 
 function webSocketPlugin(): Plugin {
 	return {
 		name: "vite-plugin-websocket",
 		configureServer(server) {
 			const wss = new WebSocketServer({ noServer: true });
+			let closeM5Bridge: (() => void) | null = null;
+
+			if (process.env.M5_BRIDGE !== "0") {
+				closeM5Bridge = startM5Bridge(broadcastMessage)?.close ?? null;
+			}
 
 			server.httpServer?.on("upgrade", (request, socket, head) => {
 				// Let Vite HMR keep its own WebSocket
@@ -19,6 +25,10 @@ function webSocketPlugin(): Plugin {
 				wss.handleUpgrade(request, socket, head, (ws) => {
 					handleConnection(ws);
 				});
+			});
+			server.httpServer?.on("close", () => {
+				closeM5Bridge?.();
+				wss.close();
 			});
 		},
 	};
