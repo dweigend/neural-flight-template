@@ -24,6 +24,12 @@
             description:
                 "Flying placeholder horizon demo for validating observer-based chunk selection",
         },
+        {
+            name: "Visio Tile Chunk Manifest",
+            href: "/lab/visio-tile-chunk-manifest",
+            description:
+                "Metadata-first Visio proxy grid with horizon-highlighted chunk membership",
+        },
     ];
 </script>
 
