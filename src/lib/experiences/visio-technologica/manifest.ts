@@ -15,9 +15,9 @@ export const manifest: ExperienceManifest = {
   camera: { fov: 68, near: 0.1, far: 5000 },
   scene: {
     background: "#d9dfe5",
-    fogNear: 1200,
-    fogFar: 3200,
-    fogColor: "#eef2f5",
+    fogNear: 1000,
+    fogFar: 2000,
+    fogColor: "#d9dfe5",
     ambientIntensity: 0.8,
     sunIntensity: 0.9,
     sunColor: "#fff7ed",

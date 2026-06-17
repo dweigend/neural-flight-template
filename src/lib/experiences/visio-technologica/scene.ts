@@ -20,7 +20,7 @@ import {
 } from "./keyboard-camera-controls";
 
 const DEFAULT_FLOOR_COLOR = "#7a7a7a";
-const DEFAULT_DRIFT_SPEED = 0;
+const DEFAULT_DRIFT_SPEED = 180;
 const DEFAULT_STEER_SPEED = 4.25;
 const DEFAULT_VERTICAL_STEER_SPEED = 2.5;
 const DEFAULT_BOB_AMPLITUDE = 0.08;
@@ -32,8 +32,8 @@ const WORLD_ROTATION_X = -Math.PI / 2;
 const WORLD_ROOT_NAME = "visio-technologica-world";
 const WORLD_CHUNK_WORLD_SIZE = 180;
 const WORLD_CHUNK_WORLD_HEIGHT = 140;
-const WORLD_TILE_PLACEMENT_SCALE_X = 1.25;
-const WORLD_TILE_PLACEMENT_SCALE_Z = 1.25;
+const WORLD_TILE_PLACEMENT_SCALE_X = 2;
+const WORLD_TILE_PLACEMENT_SCALE_Z = 2;
 const MAX_VISIBLE_WORLD_TILE_CHUNKS = 6;
 const MAX_CHUNK_LOADS_PER_TURN = 1;
 const CHUNK_VIEW_DISTANCE_RATIO = 2.35;
@@ -198,6 +198,8 @@ export function tick(
     updateKeyboardCameraControls(s.keyboardControls, s.camera, ctx.delta);
   }
 
+  advanceCameraDrift(s.camera, s.driftSpeed, ctx.delta);
+
   s.flightHeight = s.camera.position.y;
   s.sky.position.copy(s.camera.position);
 
@@ -222,6 +224,25 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
     s.sky.material.dispose();
   }
   scene.remove(s.sky);
+}
+
+function advanceCameraDrift(
+  camera: THREE.PerspectiveCamera,
+  driftSpeed: number,
+  deltaSeconds: number,
+): void {
+  if (driftSpeed === 0 || deltaSeconds === 0) {
+    return;
+  }
+
+  const forwardDirection = new THREE.Vector3();
+  camera.getWorldDirection(forwardDirection);
+
+  const driftTarget = camera.parent ?? camera;
+  driftTarget.position.addScaledVector(
+    forwardDirection,
+    driftSpeed * deltaSeconds,
+  );
 }
 
 async function loadWorldTile(
