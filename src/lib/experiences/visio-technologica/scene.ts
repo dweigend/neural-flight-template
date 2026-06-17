@@ -32,9 +32,11 @@ const WORLD_ROTATION_X = -Math.PI / 2;
 const WORLD_ROOT_NAME = "visio-technologica-world";
 const WORLD_CHUNK_WORLD_SIZE = 180;
 const WORLD_CHUNK_WORLD_HEIGHT = 140;
+const WORLD_TILE_PLACEMENT_SCALE_X = 1.25;
+const WORLD_TILE_PLACEMENT_SCALE_Z = 1.25;
 const MAX_VISIBLE_WORLD_TILE_CHUNKS = 6;
 const MAX_CHUNK_LOADS_PER_TURN = 1;
-const CHUNK_VIEW_DISTANCE = WORLD_CHUNK_WORLD_SIZE * 2.35;
+const CHUNK_VIEW_DISTANCE_RATIO = 2.35;
 const CHUNK_VIEW_EDGE_BUFFER_RADIANS = Math.PI / 12;
 const CHUNK_VIEW_FADE_START_RATIO = 0.72;
 const DEFERRED_WORLD_TILE_SCHEDULE_DELAY_MS = 0;
@@ -51,7 +53,6 @@ type WorldTileFile = VisioTileChunkManifestEntry["fileName"];
 type WorldTileChunkStatus = "unloaded" | "loading" | "loaded" | "unloading";
 
 interface WorldTilePlacementContext {
-  assetNativeOrigin: THREE.Vector3;
   chunkDimensions: ChunkDimensions;
 }
 
@@ -126,9 +127,7 @@ export async function setup(
   const starterTileEntries = await Promise.all(
     starterManifestEntries.map((entry) => loadWorldTile(entry.fileName)),
   );
-  const tilePlacement = createWorldTilePlacementContext(
-    starterTileEntries[0].model,
-  );
+  const tilePlacement = createWorldTilePlacementContext();
   const tileChunks = createTileChunkRuntimeStates(
     starterTileEntries,
     tilePlacement,
@@ -228,7 +227,7 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
 async function loadWorldTile(
   fileName: WorldTileFile,
 ): Promise<{ fileName: WorldTileFile; model: THREE.Group }> {
-  const url = new URL(`./static/${fileName}`, import.meta.url).href;
+  const url = new URL(`./static/compressed/${fileName}`, import.meta.url).href;
   const gltf = await loadGLTF(url);
   const model = gltf.scene;
   model.name = fileName.replace(/\.glb$/u, "");
@@ -236,24 +235,23 @@ async function loadWorldTile(
   return { fileName, model };
 }
 
-function createWorldTilePlacementContext(
-  referenceModel: THREE.Object3D,
-): WorldTilePlacementContext {
+function createWorldTilePlacementContext(): WorldTilePlacementContext {
   return {
-    assetNativeOrigin: getWorldModelNativeOrigin(referenceModel),
     chunkDimensions: {
-      width: WORLD_CHUNK_WORLD_SIZE,
+      width: WORLD_CHUNK_WORLD_SIZE * WORLD_TILE_PLACEMENT_SCALE_X,
       height: WORLD_CHUNK_WORLD_HEIGHT,
-      depth: WORLD_CHUNK_WORLD_SIZE,
+      depth: WORLD_CHUNK_WORLD_SIZE * WORLD_TILE_PLACEMENT_SCALE_Z,
     },
   };
 }
 
 function getWorldModelNativeOrigin(model: THREE.Object3D): THREE.Vector3 {
-  const nativeBounds = new THREE.Box3().setFromObject(model);
-  const nativeCenter = nativeBounds.getCenter(new THREE.Vector3());
+  const firstChild = model.children[0];
+  if (firstChild) {
+    return firstChild.position.clone();
+  }
 
-  return new THREE.Vector3(nativeCenter.x, nativeCenter.y, nativeBounds.min.z);
+  return new THREE.Vector3();
 }
 
 function createTileChunkRuntimeStates(
@@ -438,6 +436,9 @@ function createCurrentChunkHorizon(
   camera: THREE.PerspectiveCamera,
   chunkDimensions: ChunkDimensions,
 ): ChunkViewHorizon {
+  const viewDistance =
+    Math.max(chunkDimensions.width, chunkDimensions.depth) *
+    CHUNK_VIEW_DISTANCE_RATIO;
   camera.updateMatrixWorld();
   const forwardWorldDirection = new THREE.Vector3();
   const rightWorldDirection = new THREE.Vector3();
@@ -461,7 +462,7 @@ function createCurrentChunkHorizon(
     upWorldDirection: toWorldDirection(upWorldDirection),
     verticalFovRadians: THREE.MathUtils.degToRad(camera.fov),
     viewportAspect: camera.aspect,
-    viewDistance: CHUNK_VIEW_DISTANCE,
+    viewDistance,
   });
 }
 
@@ -613,11 +614,12 @@ function positionWorldTile(
     manifestEntry,
     tilePlacement,
   );
+  const assetNativeOrigin = getWorldModelNativeOrigin(model);
 
   model.position.set(
-    sceneWorldCenter.x - tilePlacement.assetNativeOrigin.x,
-    -sceneWorldCenter.z - tilePlacement.assetNativeOrigin.y,
-    -tilePlacement.assetNativeOrigin.z,
+    sceneWorldCenter.x - assetNativeOrigin.x,
+    -sceneWorldCenter.z - assetNativeOrigin.y,
+    -assetNativeOrigin.z,
   );
 }
 
