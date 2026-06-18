@@ -1,6 +1,7 @@
 import type { FlightPlayer } from "$lib/three/player";
 import type { ExperienceState } from "../types";
 import type { BerlinDebugOverlay } from "./debug/overlay";
+import type { KeyboardFlightControls } from "./input/keyboard-flight-controls";
 import type { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import type * as THREE from "three";
 
@@ -22,6 +23,8 @@ export interface BerlinState extends ExperienceState {
   camera: THREE.PerspectiveCamera;
   /** The flight player controller */
   player: FlightPlayer;
+  /** Optional browser keyboard controls for desktop smoke testing */
+  keyboardControls: KeyboardFlightControls | null;
   /** Current flight speed */
   speed: number;
   /** Target flight speed */

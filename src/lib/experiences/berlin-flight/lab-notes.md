@@ -130,11 +130,11 @@ Cons:
 - highest engineering cost
 - highest culling, transform, and cleanup risk
 
-	Decision:** begin implementation experiments behind the local adapter with **`3d-tiles-renderer`**. Keep `@loaders.gl/tiles` as the strongest fallback and consider a custom stack only if packaged options fail.
-	
-	*Update Phase 3:* Implemented `runtime/tiles-source.ts` and `runtime/tiles-runtime.ts` as the adapter boundary.
-	
-	---
+**Decision:** begin implementation experiments behind the local adapter with **`3d-tiles-renderer`**. Keep `@loaders.gl/tiles` as the strongest fallback and consider a custom stack only if packaged options fail.
+
+*Update Phase 3:* Implemented `runtime/tiles-source.ts` and `runtime/tiles-runtime.ts` as the adapter boundary.
+
+---
 ## Phase-1 technical guardrails
 ### Performance
 - target **WebXR + WebGL** first
@@ -159,20 +159,31 @@ Every runtime helper created in later phases should expose explicit cleanup:
 - split geo math, tile runtime, debug helpers, and cleanup helpers early
 
 ---
-## Open questions for the next step
-1. Which candidate runtime has the best maintenance and API fit for modern Three?
-2. Which option gives the cleanest explicit disposal path?
-3. Can it load Cesium ion-hosted tiles without introducing CesiumJS `Viewer`?
-4. What is the minimum Berlin Mitte extent needed for a reliable smoke test?
-5. Should token handling live in this folder later, or come from an existing config boundary?
+## Current implementation notes
 
----
-## Working conclusion
-For Berlin Mitte phase 1:
-- **Cesium ion-hosted 3D Tiles** are the source
-- **Three.js** is the renderer
-- **WebXR + WebGL** is the target platform
-- **WebGPU is deferred**
-- runtime evaluation begins with **`3d-tiles-renderer`** behind `runtime/tiles-runtime.ts`
+### Behavior now
+- Tiles source resolution supports either `PUBLIC_BERLIN_TILES_URL` or Cesium ion asset resolution via `PUBLIC_BERLIN_ION_ASSET_ID` and `PUBLIC_CESIUM_ION_TOKEN`.
+- `scene.ts` owns one `BerlinFlightRoot`, a tile root, the flight player rig, and a reference grid.
+- `runtime/tiles-runtime.ts` owns `3d-tiles-renderer`, Google tile auth plugin setup, visibility, debug stats, and idempotent disposal.
+- Async tile setup is guarded with an `AbortController`; disposed experiences should not attach late tile content.
+- The debug overlay is opt-in, lazy-created, throttled, and disposed when disabled or when the experience unloads.
 
-If the next evaluation step shows poor maintenance, compatibility, or VR performance, we should reassess before building deeper experience scaffolding.
+### Known limitations
+- Tile LOD, cache size, and error target are still first-pass values and need headset profiling.
+- The reference grid is useful for smoke testing but may not belong in the final VR presentation.
+- Flight physics are connected, but collision, height constraints, and city-scale navigation tuning are not solved.
+- Attribution display for Google/Cesium content is not yet surfaced in the user-facing VR UI.
+- Browser/API-key restrictions, billing, and provider quotas remain deployment risks outside this folder.
+
+### Unresolved risks
+- Quest-class memory pressure may require stricter tile cache and quality limits.
+- Fast VR flight could expose tile popping or request bursts around dense Berlin geometry.
+- `3d-tiles-renderer` remains a replaceable runtime until sustained headset tests prove stability.
+- Existing project-wide checks can be blocked by unrelated legacy `berlin-flight-old` diagnostics.
+
+### Suggested next steps
+1. Run repeated enter/exit tests in the browser and headset to verify no orphaned groups or GPU resources remain.
+2. Profile headset FPS, draw calls, tile counts, and memory with debug overlay enabled only during diagnosis.
+3. Tune tile quality/cache settings from measured Quest behavior rather than desktop assumptions.
+4. Decide whether to remove or gate the reference grid before user-facing demos.
+5. Add an attribution/status presentation path if Google Photorealistic Tiles remains the selected data source.

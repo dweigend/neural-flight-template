@@ -9,6 +9,7 @@ import {
 import { setBerlinDebugEnabled } from "./debug/controller";
 import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
 import { BERLIN_MITTE_ORIGIN, getECEFToLocalMatrix } from "./geo";
+import { createKeyboardFlightControls } from "./input/keyboard-flight-controls";
 import { disposeObjectTree, removeFromParent } from "./runtime/cleanup";
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA, FLIGHT } from "$lib/config/flight";
@@ -49,6 +50,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     renderer: ctx.renderer,
     camera: player.camera,
     player,
+    keyboardControls: createKeyboardFlightControls(),
     speed: 0,
     targetSpeed: 10,
     isLoading: true,
@@ -74,6 +76,7 @@ export function tick(state: BerlinState, ctx: TickContext) {
     return { state: s };
   }
 
+  s.keyboardControls?.update(s.player);
   s.player.tick(ctx.delta);
 
   if (s.tilesRuntime) {
@@ -98,6 +101,9 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   s.isDisposed = true;
   s.isLoading = false;
   s.abortController.abort();
+
+  s.keyboardControls?.dispose();
+  s.keyboardControls = null;
 
   s.debugOverlay?.dispose();
   s.debugOverlay = null;
