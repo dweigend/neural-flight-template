@@ -131,6 +131,7 @@ export class TilesRuntimeAdapter {
     if (!this.renderer) return;
     if (!this.renderer.group.visible) return;
 
+    this.renderer.group.updateMatrixWorld(true);
     this.renderer.setCamera(camera);
     this.renderer.setResolutionFromRenderer(camera, webglRenderer);
     this.renderer.update();

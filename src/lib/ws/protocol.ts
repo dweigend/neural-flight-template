@@ -53,6 +53,8 @@ export function isOrientationData(data: unknown): data is OrientationData {
 		typeof d.pitch === "number" &&
 		typeof d.roll === "number" &&
 			(d.yaw === undefined || typeof d.yaw === "number") &&
+			(d.rawPitch === undefined || typeof d.rawPitch === "number") &&
+			(d.rawRoll === undefined || typeof d.rawRoll === "number") &&
 		typeof d.timestamp === "number"
 	);
 }

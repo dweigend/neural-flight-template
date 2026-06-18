@@ -9,6 +9,8 @@ export interface OrientationData {
 	yaw?: number;
 	/** Optional unscaled M5 pitch in degrees for experiences that need raw data */
 	rawPitch?: number;
+	/** Optional unscaled M5 roll in degrees for experiences that need raw data */
+	rawRoll?: number;
 	timestamp: number;
 }
 

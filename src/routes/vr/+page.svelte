@@ -84,6 +84,9 @@
                             ...(msg.rawPitch !== undefined
                                 ? { rawPitch: msg.rawPitch }
                                 : {}),
+                            ...(msg.rawRoll !== undefined
+                                ? { rawRoll: msg.rawRoll }
+                                : {}),
                         };
                         lastOrientationReceivedAt = performance.now();
                     }

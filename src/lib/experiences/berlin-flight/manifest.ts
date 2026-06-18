@@ -7,6 +7,7 @@ import type {
   TickContext,
 } from "../types";
 import type * as THREE from "three";
+import { BERLIN_FLIGHT_BASE_SPEED } from "./constants";
 import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
 import { updatePlayer } from "./player";
 import { dispose, setup, tick } from "./scene";
@@ -20,7 +21,7 @@ const parameters: ParameterDef[] = [
     group: "Movement",
     min: 0,
     max: 50,
-    default: 10,
+    default: BERLIN_FLIGHT_BASE_SPEED,
     step: 1,
     unit: "m/s",
     icon: "Gauge",

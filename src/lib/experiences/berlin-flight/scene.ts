@@ -8,11 +8,15 @@ import {
 } from "./runtime/tiles-source";
 import { setBerlinDebugEnabled } from "./debug/controller";
 import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
+import {
+  BERLIN_ALTITUDE_SPEED,
+  BERLIN_FLIGHT_BASE_SPEED,
+  BERLIN_TILE_REFINEMENT_CAMERA,
+} from "./constants";
 import { BERLIN_MITTE_ORIGIN, getECEFToLocalMatrix } from "./geo";
-import { createKeyboardFlightControls } from "./input/keyboard-flight-controls";
 import { disposeObjectTree, removeFromParent } from "./runtime/cleanup";
 import { FlightPlayer } from "$lib/three/player";
-import { CAMERA, FLIGHT } from "$lib/config/flight";
+import { CAMERA } from "$lib/config/flight";
 
 /**
  * Initializes the Berlin scene
@@ -32,10 +36,17 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     near: CAMERA.NEAR,
     far: 10000, // Increased for city scale
     spawnPosition: { x: 0, y: 100, z: 0 },
-    baseSpeed: FLIGHT.BASE_SPEED,
+    baseSpeed: BERLIN_FLIGHT_BASE_SPEED,
     terrainSlowdown: 1.0, // No terrain slowdown for tiles yet
   });
   sceneRoot.add(player.rig);
+
+  const tilesCamera = new THREE.PerspectiveCamera(
+    BERLIN_TILE_REFINEMENT_CAMERA.FOV,
+    BERLIN_TILE_REFINEMENT_CAMERA.ASPECT,
+    CAMERA.NEAR,
+    10000,
+  );
 
   const gridHelper = new THREE.GridHelper(2000, 100);
   gridHelper.position.y = -1;
@@ -49,11 +60,11 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     gridHelper,
     renderer: ctx.renderer,
     camera: player.camera,
+    tilesCamera,
     player,
-    keyboardControls: createKeyboardFlightControls(),
     latestOrientation: { pitch: 0, roll: 0 },
-    speed: 0,
-    targetSpeed: 10,
+    speed: BERLIN_FLIGHT_BASE_SPEED,
+    targetSpeed: BERLIN_FLIGHT_BASE_SPEED,
     isLoading: true,
     debugEnabled: false,
     debugOverlay: null,
@@ -77,26 +88,17 @@ export function tick(state: BerlinState, ctx: TickContext) {
     return { state: s };
   }
 
-  const keyboardActive = s.keyboardControls?.update(s.player) ?? false;
-  const { pitch, rawPitch, roll, yaw } = s.latestOrientation;
-
-  if (keyboardActive || yaw === undefined) {
-    if (!keyboardActive) {
-      s.player.updateOrientation({
-        type: "orientation",
-        pitch,
-        roll,
-        timestamp: Date.now(),
-      });
-    }
-
-    s.player.tick(ctx.delta);
-  } else {
-    s.player.tickDirectYaw(ctx.delta, rawPitch ?? pitch, yaw);
-  }
+  s.player.baseSpeed = getAltitudeScaledSpeed(
+    s.targetSpeed,
+    s.player.rig.position.y,
+  );
+  s.player.tick(ctx.delta);
+  s.speed = s.player.baseSpeed;
+  s.camera.updateMatrixWorld(true);
 
   if (s.tilesRuntime) {
-    s.tilesRuntime.update(ctx.camera, s.renderer);
+    syncTilesCamera(s);
+    s.tilesRuntime.update(s.tilesCamera, s.renderer);
   }
 
   if (s.debugEnabled) {
@@ -118,9 +120,6 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   s.isLoading = false;
   s.abortController.abort();
 
-  s.keyboardControls?.dispose();
-  s.keyboardControls = null;
-
   s.debugOverlay?.dispose();
   s.debugOverlay = null;
 
@@ -131,6 +130,54 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   removeFromParent(s.sceneRoot);
   disposeObjectTree(s.sceneRoot);
   s.sceneRoot.clear();
+}
+
+function syncTilesCamera(state: BerlinState): void {
+  const sourceCamera = getTilesCameraPoseSource(state);
+
+  state.tilesCamera.fov = BERLIN_TILE_REFINEMENT_CAMERA.FOV;
+  state.tilesCamera.aspect = BERLIN_TILE_REFINEMENT_CAMERA.ASPECT;
+  state.tilesCamera.near = state.camera.near;
+  state.tilesCamera.far = state.camera.far;
+  state.tilesCamera.updateProjectionMatrix();
+  state.tilesCamera.matrixWorld.copy(sourceCamera.matrixWorld);
+  state.tilesCamera.matrixWorldInverse.copy(sourceCamera.matrixWorld).invert();
+  state.tilesCamera.matrix.copy(sourceCamera.matrixWorld);
+  state.tilesCamera.matrixAutoUpdate = false;
+  state.tilesCamera.matrixWorld.decompose(
+    state.tilesCamera.position,
+    state.tilesCamera.quaternion,
+    state.tilesCamera.scale,
+  );
+}
+
+function getTilesCameraPoseSource(state: BerlinState): THREE.Camera {
+  if (!state.renderer.xr.isPresenting) {
+    state.camera.updateMatrixWorld(true);
+    return state.camera;
+  }
+
+  state.renderer.xr.updateCamera(state.camera);
+  const xrCamera = state.renderer.xr.getCamera();
+  xrCamera.updateMatrixWorld(true);
+  return xrCamera;
+}
+
+function getAltitudeScaledSpeed(baseSpeed: number, altitude: number): number {
+  const altitudeRange =
+    BERLIN_ALTITUDE_SPEED.MAX_ALTITUDE - BERLIN_ALTITUDE_SPEED.MIN_ALTITUDE;
+  const normalizedAltitude = THREE.MathUtils.clamp(
+    (altitude - BERLIN_ALTITUDE_SPEED.MIN_ALTITUDE) / altitudeRange,
+    0,
+    1,
+  );
+  const multiplier = THREE.MathUtils.lerp(
+    BERLIN_ALTITUDE_SPEED.MIN_MULTIPLIER,
+    BERLIN_ALTITUDE_SPEED.MAX_MULTIPLIER,
+    normalizedAltitude,
+  );
+
+  return baseSpeed * multiplier;
 }
 
 async function loadTilesWhenConfigured(state: BerlinState): Promise<void> {

@@ -132,6 +132,7 @@ export interface PlayerOrientationInput {
 	roll: number;
 	yaw?: number;
 	rawPitch?: number;
+	rawRoll?: number;
 }
 
 // ── Lifecycle Contexts ──

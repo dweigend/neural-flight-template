@@ -202,6 +202,7 @@ function mapM5OrientationToControllerMessage(
     roll,
     yaw: message.yaw,
     rawPitch: message.pitch,
+    rawRoll: message.roll,
     timestamp: Date.now(),
   };
 }

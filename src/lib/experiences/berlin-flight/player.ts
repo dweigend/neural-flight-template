@@ -10,21 +10,27 @@ export function updatePlayer(
   state: BerlinState,
   _delta: number,
 ): void {
-  const timestamp = Date.now();
+  if (state.isDisposed) return;
 
   state.latestOrientation = orientation;
 
-  // Pass speed commands to the FlightPlayer instance
+  state.player.updateOrientation({
+    type: "orientation",
+    pitch: orientation.pitch,
+    roll: orientation.roll,
+    timestamp: 0,
+  });
+
   state.player.updateSpeed({
     type: "speed",
     action: "accelerate",
     active: speed.accelerate,
-    timestamp,
+    timestamp: 0,
   });
   state.player.updateSpeed({
     type: "speed",
     action: "brake",
     active: speed.brake,
-    timestamp,
+    timestamp: 0,
   });
 }

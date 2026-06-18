@@ -14,7 +14,7 @@ export function applySettings(
   switch (id) {
     case "moveSpeed":
       if (typeof value !== "number") return;
-      state.player.baseSpeed = value;
+      state.targetSpeed = value;
       break;
     case "debugOverlay": {
       if (typeof value !== "boolean") return;

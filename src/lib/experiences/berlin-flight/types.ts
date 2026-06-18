@@ -1,7 +1,6 @@
 import type { FlightPlayer } from "$lib/three/player";
 import type { ExperienceState, PlayerOrientationInput } from "../types";
 import type { BerlinDebugOverlay } from "./debug/overlay";
-import type { KeyboardFlightControls } from "./input/keyboard-flight-controls";
 import type { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import type * as THREE from "three";
 
@@ -21,10 +20,10 @@ export interface BerlinState extends ExperienceState {
   renderer: THREE.WebGLRenderer;
   /** The camera used for rendering */
   camera: THREE.PerspectiveCamera;
+  /** Perspective camera used by 3D Tiles LOD selection/refinement */
+  tilesCamera: THREE.PerspectiveCamera;
   /** The flight player controller */
   player: FlightPlayer;
-  /** Optional browser keyboard controls for desktop smoke testing */
-  keyboardControls: KeyboardFlightControls | null;
   /** Latest controller orientation, preserving optional M5 yaw */
   latestOrientation: PlayerOrientationInput;
   /** Current flight speed */
