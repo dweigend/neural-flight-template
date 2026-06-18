@@ -2,6 +2,7 @@ import type {
   ExperienceManifest,
   ExperienceState,
   ParameterDef,
+  PlayerOrientationInput,
   SetupContext,
   TickContext,
 } from "../types";
@@ -73,7 +74,7 @@ export const manifest: ExperienceManifest = {
     scene: THREE.Scene,
   ): void => applySettings(id, value, state as BerlinState, scene),
   updatePlayer: (
-    orientation: { pitch: number; roll: number },
+    orientation: PlayerOrientationInput,
     speed: { accelerate: boolean; brake: boolean },
     state: ExperienceState,
     delta: number,

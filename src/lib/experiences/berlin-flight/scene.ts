@@ -51,6 +51,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     camera: player.camera,
     player,
     keyboardControls: createKeyboardFlightControls(),
+    latestOrientation: { pitch: 0, roll: 0 },
     speed: 0,
     targetSpeed: 10,
     isLoading: true,
@@ -76,8 +77,23 @@ export function tick(state: BerlinState, ctx: TickContext) {
     return { state: s };
   }
 
-  s.keyboardControls?.update(s.player);
-  s.player.tick(ctx.delta);
+  const keyboardActive = s.keyboardControls?.update(s.player) ?? false;
+  const { pitch, rawPitch, roll, yaw } = s.latestOrientation;
+
+  if (keyboardActive || yaw === undefined) {
+    if (!keyboardActive) {
+      s.player.updateOrientation({
+        type: "orientation",
+        pitch,
+        roll,
+        timestamp: Date.now(),
+      });
+    }
+
+    s.player.tick(ctx.delta);
+  } else {
+    s.player.tickDirectYaw(ctx.delta, rawPitch ?? pitch, yaw);
+  }
 
   if (s.tilesRuntime) {
     s.tilesRuntime.update(ctx.camera, s.renderer);

@@ -1,5 +1,5 @@
 import type { FlightPlayer } from "$lib/three/player";
-import type { ExperienceState } from "../types";
+import type { ExperienceState, PlayerOrientationInput } from "../types";
 import type { BerlinDebugOverlay } from "./debug/overlay";
 import type { KeyboardFlightControls } from "./input/keyboard-flight-controls";
 import type { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
@@ -25,6 +25,8 @@ export interface BerlinState extends ExperienceState {
   player: FlightPlayer;
   /** Optional browser keyboard controls for desktop smoke testing */
   keyboardControls: KeyboardFlightControls | null;
+  /** Latest controller orientation, preserving optional M5 yaw */
+  latestOrientation: PlayerOrientationInput;
   /** Current flight speed */
   speed: number;
   /** Target flight speed */

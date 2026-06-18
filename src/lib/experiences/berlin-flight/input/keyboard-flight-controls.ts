@@ -5,7 +5,7 @@ const KEYBOARD_YAW_BANK_DEGREES = 30;
 const ARROW_KEYS = new Set(["arrowup", "arrowdown", "arrowleft", "arrowright"]);
 
 export interface KeyboardFlightControls {
-  update(player: FlightPlayer): void;
+  update(player: FlightPlayer): boolean;
   dispose(): void;
 }
 
@@ -54,11 +54,11 @@ class BrowserKeyboardFlightControls implements KeyboardFlightControls {
     target.addEventListener("blur", this.onBlur);
   }
 
-  public update(player: FlightPlayer): void {
-    if (this.disposed) return;
+  public update(player: FlightPlayer): boolean {
+    if (this.disposed) return false;
 
     const hasActiveInput = this.hasActiveInput();
-    if (!hasActiveInput && !this.needsNeutralUpdate) return;
+    if (!hasActiveInput && !this.needsNeutralUpdate) return false;
 
     const pitch = hasActiveInput ? this.getPitch() : 0;
     const yawBank = hasActiveInput ? this.getYawBank() : 0;
@@ -70,6 +70,8 @@ class BrowserKeyboardFlightControls implements KeyboardFlightControls {
       roll: yawBank,
       timestamp: Date.now(),
     });
+
+    return hasActiveInput;
   }
 
   public dispose(): void {

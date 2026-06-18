@@ -103,6 +103,28 @@ export class FlightPlayer {
 		this.clampToTerrain();
 	}
 
+	tickDirectYaw(delta: number, pitch: number, yaw: number): void {
+		this.currentPitch = pitch;
+		this.currentRoll = 0;
+		this.targetPitch = pitch;
+		this.targetRoll = 0;
+		this.heading = yaw * DEG2RAD;
+
+		this.updateVelocity();
+
+		const pitchRad = pitch * DEG2RAD;
+		const forward = new THREE.Vector3(
+			-Math.sin(this.heading) * Math.cos(pitchRad),
+			-Math.sin(pitchRad),
+			-Math.cos(this.heading) * Math.cos(pitchRad),
+		);
+
+		this.rig.position.addScaledVector(forward, this.velocity * delta);
+		this.rig.rotation.set(-pitchRad, this.heading, 0, "YXZ");
+
+		this.clampToTerrain();
+	}
+
 	private updateVelocity(): void {
 		if (this.accelerating) {
 			this.velocity = this.baseSpeed * 2; // 2× boost while accelerating

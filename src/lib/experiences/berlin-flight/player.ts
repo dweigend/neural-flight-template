@@ -1,23 +1,18 @@
+import type { PlayerOrientationInput } from "../types";
 import type { BerlinState } from "./types";
 
 /**
  * Updates player physics and movement for Berlin
  */
 export function updatePlayer(
-  orientation: { pitch: number; roll: number },
+  orientation: PlayerOrientationInput,
   speed: { accelerate: boolean; brake: boolean },
   state: BerlinState,
   _delta: number,
 ): void {
   const timestamp = Date.now();
 
-  // Pass orientation to the FlightPlayer instance
-  state.player.updateOrientation({
-    type: "orientation",
-    pitch: orientation.pitch,
-    roll: orientation.roll,
-    timestamp,
-  });
+  state.latestOrientation = orientation;
 
   // Pass speed commands to the FlightPlayer instance
   state.player.updateSpeed({

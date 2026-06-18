@@ -9,6 +9,7 @@
         loadExperience,
         unloadExperience,
     } from "$lib/experiences/loader";
+    import type { PlayerOrientationInput } from "$lib/experiences/types";
     import { EXTERNAL_INPUT_GRACE_MS } from "$lib/experiences/visio-technologica/keyboard-camera-controls";
     import { createWebSocketClient } from "$lib/ws/client.svelte";
     import {
@@ -28,7 +29,7 @@
     const ws = createWebSocketClient();
     const clock = new THREE.Clock();
 
-    let lastOrientation = { pitch: 0, roll: 0 };
+    let lastOrientation: PlayerOrientationInput = { pitch: 0, roll: 0 };
     let lastSpeed = { accelerate: false, brake: false };
     let lastOrientationReceivedAt = 0;
     let removeResizeListener: (() => void) | null = null;
@@ -76,7 +77,14 @@
                     lastProcessedTimestamp = msg.timestamp;
 
                     if (isOrientationData(msg)) {
-                        lastOrientation = { pitch: msg.pitch, roll: msg.roll };
+                        lastOrientation = {
+                            pitch: msg.pitch,
+                            roll: msg.roll,
+                            ...(msg.yaw !== undefined ? { yaw: msg.yaw } : {}),
+                            ...(msg.rawPitch !== undefined
+                                ? { rawPitch: msg.rawPitch }
+                                : {}),
+                        };
                         lastOrientationReceivedAt = performance.now();
                     }
                     if (isSpeedCommand(msg)) {

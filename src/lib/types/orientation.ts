@@ -5,6 +5,10 @@ export interface OrientationData {
 	pitch: number;
 	/** Left/right lean in degrees (-90 to 90) */
 	roll: number;
+	/** Optional yaw/heading in degrees, provided by M5 orientation messages */
+	yaw?: number;
+	/** Optional unscaled M5 pitch in degrees for experiences that need raw data */
+	rawPitch?: number;
 	timestamp: number;
 }
 
