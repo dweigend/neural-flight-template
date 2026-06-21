@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { SetupContext, TickContext } from "../types";
 import type { BerlinState } from "./types";
-import { createTilesRuntime } from "./runtime/tiles-runtime";
+import { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import {
   resolveBerlinTileset,
   isSourceConfigured,
@@ -11,10 +11,9 @@ import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
 import {
   BERLIN_ALTITUDE_SPEED,
   BERLIN_FLIGHT_BASE_SPEED,
-  BERLIN_TILE_REFINEMENT_CAMERA,
 } from "./constants";
 import { BERLIN_MITTE_ORIGIN, getECEFToLocalMatrix } from "./geo";
-import { disposeObjectTree, removeFromParent } from "./runtime/cleanup";
+import { disposeObjectTree } from "./runtime/cleanup";
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA } from "$lib/config/flight";
 
@@ -41,13 +40,6 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   });
   sceneRoot.add(player.rig);
 
-  const tilesCamera = new THREE.PerspectiveCamera(
-    BERLIN_TILE_REFINEMENT_CAMERA.FOV,
-    BERLIN_TILE_REFINEMENT_CAMERA.ASPECT,
-    CAMERA.NEAR,
-    10000,
-  );
-
   const gridHelper = new THREE.GridHelper(2000, 100);
   gridHelper.position.y = -1;
   sceneRoot.add(gridHelper);
@@ -57,13 +49,9 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     sceneRoot,
     tilesRuntime: null,
     tilesGroup,
-    gridHelper,
     renderer: ctx.renderer,
     camera: player.camera,
-    tilesCamera,
     player,
-    latestOrientation: { pitch: 0, roll: 0 },
-    speed: BERLIN_FLIGHT_BASE_SPEED,
     targetSpeed: BERLIN_FLIGHT_BASE_SPEED,
     isLoading: true,
     debugEnabled: false,
@@ -93,12 +81,10 @@ export function tick(state: BerlinState, ctx: TickContext) {
     s.player.rig.position.y,
   );
   s.player.tick(ctx.delta);
-  s.speed = s.player.baseSpeed;
   s.camera.updateMatrixWorld(true);
 
   if (s.tilesRuntime) {
-    syncTilesCamera(s);
-    s.tilesRuntime.update(s.tilesCamera, s.renderer);
+    s.tilesRuntime.update(getTileSelectionCameras(s), s.renderer);
   }
 
   if (s.debugEnabled) {
@@ -127,40 +113,21 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   s.tilesRuntime?.dispose();
   s.tilesRuntime = null;
 
-  removeFromParent(s.sceneRoot);
+  s.sceneRoot.removeFromParent();
   disposeObjectTree(s.sceneRoot);
   s.sceneRoot.clear();
 }
 
-function syncTilesCamera(state: BerlinState): void {
-  const sourceCamera = getTilesCameraPoseSource(state);
-
-  state.tilesCamera.fov = BERLIN_TILE_REFINEMENT_CAMERA.FOV;
-  state.tilesCamera.aspect = BERLIN_TILE_REFINEMENT_CAMERA.ASPECT;
-  state.tilesCamera.near = state.camera.near;
-  state.tilesCamera.far = state.camera.far;
-  state.tilesCamera.updateProjectionMatrix();
-  state.tilesCamera.matrixWorld.copy(sourceCamera.matrixWorld);
-  state.tilesCamera.matrixWorldInverse.copy(sourceCamera.matrixWorld).invert();
-  state.tilesCamera.matrix.copy(sourceCamera.matrixWorld);
-  state.tilesCamera.matrixAutoUpdate = false;
-  state.tilesCamera.matrixWorld.decompose(
-    state.tilesCamera.position,
-    state.tilesCamera.quaternion,
-    state.tilesCamera.scale,
-  );
-}
-
-function getTilesCameraPoseSource(state: BerlinState): THREE.Camera {
+function getTileSelectionCameras(state: BerlinState): readonly THREE.Camera[] {
   if (!state.renderer.xr.isPresenting) {
     state.camera.updateMatrixWorld(true);
-    return state.camera;
+    return [state.camera];
   }
 
   state.renderer.xr.updateCamera(state.camera);
   const xrCamera = state.renderer.xr.getCamera();
   xrCamera.updateMatrixWorld(true);
-  return xrCamera;
+  return xrCamera.cameras;
 }
 
 function getAltitudeScaledSpeed(baseSpeed: number, altitude: number): number {
@@ -193,7 +160,7 @@ async function loadTilesWhenConfigured(state: BerlinState): Promise<void> {
     console.log("[BerlinFlight] Resolved tileset URL:", url);
     console.log("[BerlinFlight] Token length:", token?.length ?? 0);
 
-    const runtime = createTilesRuntime(url, token);
+    const runtime = new TilesRuntimeAdapter(url, token);
     state.tilesRuntime = runtime;
 
     const tiles = await runtime.loadTiles(

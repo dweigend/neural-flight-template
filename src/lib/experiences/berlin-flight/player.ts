@@ -12,8 +12,6 @@ export function updatePlayer(
 ): void {
   if (state.isDisposed) return;
 
-  state.latestOrientation = orientation;
-
   state.player.updateOrientation({
     type: "orientation",
     pitch: orientation.pitch,

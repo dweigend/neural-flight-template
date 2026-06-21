@@ -11,9 +11,3 @@ export const BERLIN_MITTE_ORIGIN: GeoPoint = {
 	lon: 13.4050,
 	height: 0,
 };
-
-/**
- * Conversion constants
- */
-export const EARTH_RADIUS = 6378137; // WGS84 semi-major axis in meters
-export const METERS_PER_DEGREE_LAT = 111319.9; // Approximate at equator

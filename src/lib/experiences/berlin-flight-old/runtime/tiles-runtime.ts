@@ -92,9 +92,7 @@ class ThreeTilesRuntimeAdapter implements TilesRuntimeAdapter {
 
     try {
       await this.loadTiles(source, this.#abortController.signal);
-      if (this.stats.status !== "error") {
-        console.log("[TilesRuntimeAdapter] loadTiles completed successfully");
-      }
+      console.log("[TilesRuntimeAdapter] loadTiles completed successfully");
     } catch (error) {
       console.error("[TilesRuntimeAdapter] loadTiles error", error);
       if (this.#isDisposed) return;

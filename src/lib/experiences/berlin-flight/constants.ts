@@ -19,16 +19,3 @@ export const BERLIN_ALTITUDE_SPEED = {
   MIN_MULTIPLIER: 0.45,
   MAX_MULTIPLIER: 3,
 } as const;
-
-export const BERLIN_TILE_REFINEMENT_CAMERA = {
-  FOV: 115,
-  ASPECT: 1,
-} as const;
-
-// Berlin Mitte Center (approximate)
-// These will be refined in Phase 2
-export const BERLIN_MITTE_COORDINATES = {
-  lat: 52.52,
-  lon: 13.405,
-  height: 0,
-};

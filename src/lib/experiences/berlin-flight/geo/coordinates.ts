@@ -1,8 +1,5 @@
 import * as THREE from "three";
-import {
-  BERLIN_MITTE_ORIGIN,
-  METERS_PER_DEGREE_LAT,
-} from "./berlin-mitte-origin";
+import { BERLIN_MITTE_ORIGIN } from "./berlin-mitte-origin";
 import type { GeoPoint, WorldPoint } from "./types";
 
 /**
@@ -46,31 +43,6 @@ export function getECEFToLocalMatrix(origin: GeoPoint): THREE.Matrix4 {
 
   // We want the inverse: from ECEF to Local
   return matrix.invert();
-}
-
-/**
- * Converts geographic coordinates to local world-space meters relative to Berlin Mitte.
- *
- * Convention:
- * - X: East/West (Positive East)
- * - Y: Up/Down (Positive Up)
- * - Z: North/South (Positive South - Three.js default)
- */
-export function geoToWorld(point: GeoPoint): WorldPoint {
-  const latRad = (BERLIN_MITTE_ORIGIN.lat * Math.PI) / 180;
-
-  // Meters per degree longitude decreases as we move away from the equator
-  const metersPerDegreeLon = METERS_PER_DEGREE_LAT * Math.cos(latRad);
-
-  const dx = (point.lon - BERLIN_MITTE_ORIGIN.lon) * metersPerDegreeLon;
-  const dz = (point.lat - BERLIN_MITTE_ORIGIN.lat) * METERS_PER_DEGREE_LAT;
-  const dy = point.height - BERLIN_MITTE_ORIGIN.height;
-
-  return {
-    x: dx,
-    y: dy,
-    z: -dz, // Invert Z for Three.js (Forward is -Z)
-  };
 }
 
 /**

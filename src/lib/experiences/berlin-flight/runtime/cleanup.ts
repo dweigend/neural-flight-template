@@ -18,12 +18,6 @@ export function disposeObjectTree(root: THREE.Object3D | null): void {
   });
 }
 
-export function removeFromParent(object: THREE.Object3D | null): void {
-  if (!object) return;
-
-  object.removeFromParent();
-}
-
 function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
   if (Array.isArray(material)) {
     for (const entry of material) {

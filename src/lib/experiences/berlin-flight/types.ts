@@ -1,5 +1,5 @@
 import type { FlightPlayer } from "$lib/three/player";
-import type { ExperienceState, PlayerOrientationInput } from "../types";
+import type { ExperienceState } from "../types";
 import type { BerlinDebugOverlay } from "./debug/overlay";
 import type { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import type * as THREE from "three";
@@ -14,20 +14,12 @@ export interface BerlinState extends ExperienceState {
   tilesRuntime: TilesRuntimeAdapter | null;
   /** Group containing all tiles for easy management */
   tilesGroup: THREE.Group;
-  /** Reference grid owned by this experience */
-  gridHelper: THREE.GridHelper;
   /** The renderer instance for tiles resolution updates */
   renderer: THREE.WebGLRenderer;
   /** The camera used for rendering */
   camera: THREE.PerspectiveCamera;
-  /** Perspective camera used by 3D Tiles LOD selection/refinement */
-  tilesCamera: THREE.PerspectiveCamera;
   /** The flight player controller */
   player: FlightPlayer;
-  /** Latest controller orientation, preserving optional M5 yaw */
-  latestOrientation: PlayerOrientationInput;
-  /** Current flight speed */
-  speed: number;
   /** Target flight speed */
   targetSpeed: number;
   /** Whether tiles are currently loading */
