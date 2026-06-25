@@ -28,6 +28,13 @@ dev/
 CLAUDE.md
 assets/
 
+# Dev server logs (leftovers from `bun run dev`)
+dev-server.log
+dev-server-err.log
+
+# Wrong lockfile (project uses bun, not npm)
+package-lock.json
+
 # TLS certs
 *.pem
 
