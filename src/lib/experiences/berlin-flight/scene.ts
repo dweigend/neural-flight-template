@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Scheduler } from "3d-tiles-renderer";
 import type { SetupContext, TickContext } from "../types";
 import type { BerlinState } from "./types";
 import { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
@@ -90,6 +91,11 @@ export function tick(state: BerlinState, ctx: TickContext) {
   s.player.rig.updateMatrixWorld(true);
 
   if (s.tilesRuntime) {
+    // Sync the WebXR session with the 3D Tiles scheduler so that requestAnimationFrame callbacks
+    // (used for priority queue loading) run on the WebXR render loop rather than getting throttled.
+    const xrSession = s.renderer.xr.getSession();
+    Scheduler.setXRSession(xrSession as XRSession);
+
     syncTileSelectionCamera(s);
     s.tilesRuntime.update(getTileSelectionCameras(s), s.renderer);
   }
