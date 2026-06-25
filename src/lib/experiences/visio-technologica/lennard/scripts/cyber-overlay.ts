@@ -32,10 +32,10 @@ export const CYBER = {
   // Language per grid slot. Each sub-array is one row (left→right, top→bottom).
   // Shape must match gridRows × gridColumns.
   languages: [
-    ["German",          "Turkish",         "Arabic",          "English"],
-    ["Russian",         "Polish",          "Vietnamese",      "Kurdish"],
-    ["Romanian",        "Bulgarian",       "French",          "Persian"],
-    ["Serbian",         "Spanish",         "Portuguese",      "Mandarin Chinese"],
+    ["Romanian", "Vietnamese", "Kurdish", "Bulgarian"],
+    ["French", "German", "Turkish", "Persian"],
+    ["Serbian", "Arabic", "English", "Spanish"],
+    ["Portuguese", "Russian", "Polish", "Mandarin Chinese"],
   ],
 
   // Per-slot override — same shape as languages. null = use dictionary.
@@ -211,9 +211,7 @@ export function getTexts(): string[] {
   const overrides = CYBER.textOverrides.flat();
   return langs.map(
     (lang, i) =>
-      overrides[i] ??
-      lookupTranslation(CYBER.message, lang) ??
-      CYBER.message,
+      overrides[i] ?? lookupTranslation(CYBER.message, lang) ?? CYBER.message,
   );
 }
 
@@ -340,27 +338,51 @@ export class CyberOverlay {
 
     ctx.clearRect(0, 0, w, h);
 
-    const glowPx = (v.glowPercent / 100) * 24;
-    const pad = 12;
+    this._drawBorder(v, w, h);
 
-    // Rectangle outline
-    ctx.shadowColor = v.color;
+    ctx.globalAlpha = 1;
+    this._drawTextContent(this._text, ctx, v, w, h);
+
+    this.texture.needsUpdate = true;
+  }
+
+  /** Draw border at full opacity — used in transitions too */
+  private _drawBorder(v: Record<string, unknown>, w: number, h: number): void {
+    const ctx = this.ctx;
+    const glowPx = ((v.glowPercent as number) / 100) * 24;
+    ctx.shadowColor = v.color as string;
     ctx.shadowBlur = glowPx;
-    ctx.strokeStyle = v.color;
-    ctx.lineWidth = v.lineThickness;
-    const hl = v.lineThickness / 2;
-    ctx.strokeRect(hl, hl, w - v.lineThickness, h - v.lineThickness);
+    ctx.strokeStyle = v.color as string;
+    ctx.lineWidth = v.lineThickness as number;
+    const hl = (v.lineThickness as number) / 2;
+    ctx.strokeRect(
+      hl,
+      hl,
+      w - (v.lineThickness as number),
+      h - (v.lineThickness as number),
+    );
+  }
 
-    // Text — word-wrapped
+  /** Draw text content on canvas at given globalAlpha */
+  private _drawTextContent(
+    text: string,
+    ctx: CanvasRenderingContext2D,
+    v: Record<string, unknown>,
+    w: number,
+    h: number,
+  ): void {
+    const pad = 12;
+    const glowPx = ((v.glowPercent as number) / 100) * 24;
+
     ctx.font = `${v.fontWeight} ${v.fontSize}px ${v.fontFamily}`;
-    ctx.fillStyle = v.color;
+    ctx.fillStyle = v.color as string;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.shadowBlur = glowPx;
 
     const maxW = w - pad * 2;
     const lines: string[] = [];
-    for (const segment of this._text.split("\n")) {
+    for (const segment of text.split("\n")) {
       const words = segment.split(" ");
       let line = "";
       for (const word of words) {
@@ -375,31 +397,63 @@ export class CyberOverlay {
       if (line) lines.push(line);
     }
 
-    // Rebalance: move words from long lines to short next lines
-    // to avoid orphaned words and make lines more balanced
     for (let i = 0; i < lines.length - 1; i++) {
       const cur = lines[i];
       const nxt = lines[i + 1];
       const curWords = cur.split(" ");
       if (curWords.length < 2) continue;
-      // Try moving last word of cur to beginning of nxt
       const lastWord = curWords[curWords.length - 1];
       const curShort = curWords.slice(0, -1).join(" ");
       const nxtLong = lastWord + " " + nxt;
-      if (ctx.measureText(curShort).width <= maxW &&
-          ctx.measureText(nxtLong).width <= maxW) {
+      if (
+        ctx.measureText(curShort).width <= maxW &&
+        ctx.measureText(nxtLong).width <= maxW
+      ) {
         lines[i] = curShort;
         lines[i + 1] = nxtLong;
       }
     }
 
-    const lineH = v.fontSize * 1.3;
+    const lineH = (v.fontSize as number) * 1.3;
     const totalH = lines.length * lineH;
     const startY = (h - totalH) / 2 + lineH / 2;
     for (let i = 0; i < lines.length; i++) {
       ctx.fillText(lines[i], w / 2, startY + i * lineH);
     }
+  }
 
+  /** Draw border at full opacity with text at custom alpha (for sequential transitions) */
+  drawTextFade(text: string, alpha: number): void {
+    const { canvas, ctx } = this;
+    const v = { ...CYBER, ...this._overrides };
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    this._drawBorder(v, w, h);
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    this._drawTextContent(text, ctx, v, w, h);
+    ctx.globalAlpha = 1;
+    this.texture.needsUpdate = true;
+  }
+
+  /** Crossfade between old and new text — border stays fully visible */
+  drawTextTransition(oldText: string, newText: string, progress: number): void {
+    const { canvas, ctx } = this;
+    const v = { ...CYBER, ...this._overrides };
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    this._drawBorder(v, w, h);
+
+    ctx.globalAlpha = Math.max(0, 1 - progress);
+    this._drawTextContent(oldText, ctx, v, w, h);
+
+    ctx.globalAlpha = Math.min(1, progress);
+    this._drawTextContent(newText, ctx, v, w, h);
+
+    ctx.globalAlpha = 1;
     this.texture.needsUpdate = true;
   }
 }
