@@ -1,6 +1,8 @@
 import type { FlightPlayer } from "$lib/three/player";
 import type { ExperienceState } from "../types";
 import type { BerlinDebugOverlay } from "./debug/overlay";
+import type { BerlinCollisionController } from "./collision/controller";
+import type { BerlinConeGridRuntime } from "./runtime/cone-grid-runtime";
 import type { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import type * as THREE from "three";
 
@@ -19,6 +21,10 @@ export interface BerlinState extends ExperienceState {
   tilesRuntime: TilesRuntimeAdapter | null;
   /** Group containing all tiles for easy management */
   tilesGroup: THREE.Group;
+  /** Streams nearby cone chunks around the player */
+  coneRuntime: BerlinConeGridRuntime;
+  /** Owns cone/tile collision debug processing */
+  collisionController: BerlinCollisionController;
   /** The renderer instance for tiles resolution updates */
   renderer: THREE.WebGLRenderer;
   /** The camera used for rendering */

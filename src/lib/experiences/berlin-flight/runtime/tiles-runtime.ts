@@ -1,89 +1,13 @@
 import { TilesRenderer } from "3d-tiles-renderer";
-import { GoogleCloudAuthPlugin } from "3d-tiles-renderer/plugins";
 import * as THREE from "three";
 import type { Camera, Group, WebGLRenderer } from "three";
-
-const BERLIN_TILE_GREY = 0xbeeeef;
-
-type TileLoadEvent = {
-  scene: THREE.Object3D;
-  tile: unknown;
-  type: "load-model";
-  url: string;
-};
-
-type TileMaterialMesh = THREE.Mesh<
-  THREE.BufferGeometry,
-  THREE.Material | THREE.Material[]
->;
-
-type MaterialWithTextureMaps = THREE.Material & {
-  alphaMap?: THREE.Texture | null;
-  aoMap?: THREE.Texture | null;
-  bumpMap?: THREE.Texture | null;
-  displacementMap?: THREE.Texture | null;
-  emissiveMap?: THREE.Texture | null;
-  lightMap?: THREE.Texture | null;
-  map?: THREE.Texture | null;
-  metalnessMap?: THREE.Texture | null;
-  normalMap?: THREE.Texture | null;
-  roughnessMap?: THREE.Texture | null;
-  specularMap?: THREE.Texture | null;
-};
-
-function createBerlinTileMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color: BERLIN_TILE_GREY,
-    depthTest: true,
-    depthWrite: true,
-    flatShading: true,
-    metalness: 0,
-    opacity: 0.6,
-    roughness: 0.5,
-    transparent: true,
-  });
-}
-
-function disposeMaterialTextures(material: THREE.Material): void {
-  const materialWithMaps = material as MaterialWithTextureMaps;
-
-  materialWithMaps.map?.dispose();
-  materialWithMaps.alphaMap?.dispose();
-  materialWithMaps.aoMap?.dispose();
-  materialWithMaps.bumpMap?.dispose();
-  materialWithMaps.displacementMap?.dispose();
-  materialWithMaps.emissiveMap?.dispose();
-  materialWithMaps.lightMap?.dispose();
-  materialWithMaps.metalnessMap?.dispose();
-  materialWithMaps.normalMap?.dispose();
-  materialWithMaps.roughnessMap?.dispose();
-  materialWithMaps.specularMap?.dispose();
-}
-
-function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
-  if (Array.isArray(material)) {
-    for (const entry of material) {
-      disposeMaterialTextures(entry);
-      entry.dispose();
-    }
-    return;
-  }
-
-  disposeMaterialTextures(material);
-  material.dispose();
-}
-
-function overrideTileSceneMaterials(root: THREE.Object3D): void {
-  root.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    if (!(child.geometry instanceof THREE.BufferGeometry)) return;
-
-    const mesh = child as TileMaterialMesh;
-    const originalMaterial = mesh.material;
-    mesh.material = createBerlinTileMaterial();
-    disposeMaterial(originalMaterial);
-  });
-}
+import { BerlinTileMeshRegistry } from "../collision/mesh-tracker";
+import type { TrackedTileMesh } from "../collision/tile-mesh-types";
+import {
+  configureBerlinTilesRenderer,
+  type TileDisposeEvent,
+  type TileLoadEvent,
+} from "./tiles-renderer-config";
 
 export interface TilesRuntimeDebugStats {
   hasRenderer: boolean;
@@ -92,6 +16,7 @@ export interface TilesRuntimeDebugStats {
   loadProgress: number;
   visibleTiles: number;
   activeTiles: number;
+  trackedMeshes: number;
 }
 
 /**
@@ -102,6 +27,7 @@ export class TilesRuntimeAdapter {
   private renderer: TilesRenderer | null = null;
   private loadPromise: Promise<TilesRenderer> | null = null;
   private readonly activeCameras = new Set<Camera>();
+  private readonly meshRegistry = new BerlinTileMeshRegistry();
   private readonly url: string;
   private readonly token: string;
   private disposed = false;
@@ -168,6 +94,9 @@ export class TilesRuntimeAdapter {
       console.log("[BerlinFlight] 3D Tiles renderer initialized.");
       return renderer;
     } catch (error) {
+      renderer?.removeEventListener("load-model", this.handleLoadModel);
+      renderer?.removeEventListener("dispose-model", this.handleDisposeModel);
+      this.meshRegistry.dispose();
       renderer?.dispose();
       this.renderer = null;
       this.loadPromise = null;
@@ -181,34 +110,21 @@ export class TilesRuntimeAdapter {
   }
 
   private configureRenderer(renderer: TilesRenderer): void {
-    const isGoogleTiles = this.url.includes("tile.googleapis.com");
-
-    if (isGoogleTiles) {
-      const parsedUrl = new URL(this.url);
-      const apiKey = parsedUrl.searchParams.get("key");
-
-      if (apiKey) {
-        renderer.registerPlugin(
-          new GoogleCloudAuthPlugin({
-            apiToken: apiKey,
-            autoRefreshToken: true,
-          }),
-        );
-      }
-    }
-
-    if (this.token && !isGoogleTiles) {
-      renderer.fetchOptions.headers = {
-        Authorization: `Bearer ${this.token}`,
-      };
-    }
-
-    renderer.errorTarget = 12;
-    renderer.addEventListener("load-model", this.handleLoadModel);
+    configureBerlinTilesRenderer(
+      renderer,
+      this.url,
+      this.token,
+      this.handleLoadModel,
+      this.handleDisposeModel,
+    );
   }
 
   private readonly handleLoadModel = (event: TileLoadEvent): void => {
-    overrideTileSceneMaterials(event.scene);
+    this.meshRegistry.trackTileScene(event.scene);
+  };
+
+  private readonly handleDisposeModel = (event: TileDisposeEvent): void => {
+    this.meshRegistry.untrackTileScene(event.scene);
   };
 
   /**
@@ -255,6 +171,15 @@ export class TilesRuntimeAdapter {
     target.loadProgress = this.renderer?.loadProgress ?? 0;
     target.visibleTiles = this.renderer?.visibleTiles.size ?? 0;
     target.activeTiles = this.renderer?.activeTiles.size ?? 0;
+    target.trackedMeshes = this.meshRegistry.getTrackedMeshCount();
+  }
+
+  public getTrackedTileMeshes(): readonly TrackedTileMesh[] {
+    return this.meshRegistry.getTrackedTileMeshes();
+  }
+
+  public getTrackedTileMeshVersion(): number {
+    return this.meshRegistry.getVersion();
   }
 
   /**
@@ -266,12 +191,16 @@ export class TilesRuntimeAdapter {
     this.disposed = true;
 
     if (!this.renderer) {
+      this.meshRegistry.dispose();
       this.loadPromise = null;
+      this.activeCameras.clear();
       return;
     }
 
     this.renderer.group.removeFromParent();
     this.renderer.removeEventListener("load-model", this.handleLoadModel);
+    this.renderer.removeEventListener("dispose-model", this.handleDisposeModel);
+    this.meshRegistry.dispose();
     this.renderer.dispose();
     this.renderer = null;
     this.loadPromise = null;

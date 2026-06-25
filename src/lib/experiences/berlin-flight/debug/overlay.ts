@@ -4,6 +4,7 @@ import {
   BERLIN_DEBUG_OVERLAY_UPDATE_SECONDS,
   BERLIN_DEBUG_OVERLAY_WIDTH,
 } from "./config";
+import type { BerlinCollisionDebugStats } from "../collision/controller";
 import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
 
@@ -43,6 +44,14 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     loadProgress: 0,
     visibleTiles: 0,
     activeTiles: 0,
+    trackedMeshes: 0,
+  };
+  private readonly collisionStats: BerlinCollisionDebugStats = {
+    activeCones: 0,
+    trackedMeshes: 0,
+    dirtyMeshes: 0,
+    processedMeshesLastTick: 0,
+    verticesTestedLastTick: 0,
   };
 
   private disposed = false;
@@ -87,6 +96,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
 
     this.nextUpdate = elapsed + BERLIN_DEBUG_OVERLAY_UPDATE_SECONDS;
     state.tilesRuntime?.writeDebugStats(this.tilesStats);
+    state.collisionController.writeDebugStats(this.collisionStats);
     if (!state.tilesRuntime) {
       this.resetTilesStats();
     }
@@ -111,6 +121,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     this.tilesStats.loadProgress = 0;
     this.tilesStats.visibleTiles = 0;
     this.tilesStats.activeTiles = 0;
+    this.tilesStats.trackedMeshes = 0;
   }
 
   private draw(state: BerlinState): void {
@@ -136,6 +147,17 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     );
     this.drawLine(7, `visible tiles: ${this.tilesStats.visibleTiles}`);
     this.drawLine(8, `active tiles: ${this.tilesStats.activeTiles}`);
+    this.drawLine(9, `tracked meshes: ${this.tilesStats.trackedMeshes}`);
+    this.drawLine(10, `active cones: ${this.collisionStats.activeCones}`);
+    this.drawLine(11, `dirty meshes: ${this.collisionStats.dirtyMeshes}`);
+    this.drawLine(
+      12,
+      `meshes/tick: ${this.collisionStats.processedMeshesLastTick}`,
+    );
+    this.drawLine(
+      13,
+      `vertices/tick: ${this.collisionStats.verticesTestedLastTick}`,
+    );
   }
 
   private drawLine(index: number, text: string): void {
