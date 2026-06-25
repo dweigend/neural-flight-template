@@ -8,15 +8,15 @@ export const CYBER = {
   // ── Visuals ─────────────────────────────────────────────────────
   color: "#ff44aa", // Colour of the border lines and the text (hex, rgb, or named)
   glowPercent: 50, // Glow intensity 0–100 (0 = no glow, 100 = max glow)
-  fontSize: 40, // Text size in canvas pixels
+  fontSize: 36, // Text size in canvas pixels
   fontWeight: "bold", // Text thickness: "normal", "bold", or "100"–"900"
   lineThickness: 2.5, // Thickness of the rectangle border lines (canvas px)
   fontFamily: "monospace", // Font family
   opacity: 1, // Opacity 0–1 (0 = invisible, 1 = fully opaque)
 
   // ── Texture ─────────────────────────────────────────────────────
-  textureWidth: 480, // Canvas width in pixels (higher = sharper, more GPU memory)
-  textureHeight: 130, // Canvas height in pixels
+  textureWidth: 640, // Canvas width in pixels (higher = sharper, more GPU memory)
+  textureHeight: 200, // Canvas height in pixels
 
   // ── Grid layout ─────────────────────────────────────────────────
   gridRows: 4, // Number of rows
@@ -143,10 +143,65 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
     Japanese: "ありがとう",
     Korean: "감사합니다",
   },
+  "HUMAN PERCEPTION DETECTED": {
+    German: "MENSCHLICHE WAHRNEHMUNG ERKANNT",
+    Turkish: "İNSAN ALGISI TESPİT EDİLDİ",
+    Arabic: "تم اكتشاف الإدراك البشري",
+    English: "HUMAN PERCEPTION DETECTED",
+    Russian: "ОБНАРУЖЕНО ЧЕЛОВЕЧЕСКОЕ ВОСПРИЯТИЕ",
+    Polish: "WYKRYTO LUDZKĄ PERCEPCJĘ",
+    Vietnamese: "PHÁT HIỆN NHẬN THỨC CON NGƯỜI",
+    Kurdish: "TESPÎHIRINA TÊGIHIŞTINA MIROVAN",
+    Romanian: "PERCEPȚIA UMANĂ DETECTATĂ",
+    Bulgarian: "ОТКРИТО ЧОВЕШКО ВЪЗПРИЯТИЕ",
+    French: "PERCEPTION HUMAINE DÉTECTÉE",
+    Persian: "ادراک انسانی تشخیص داده شد",
+    Serbian: "ЉУДСКА ПЕРЦЕПЦИЈА ОТКРИВЕНА",
+    Spanish: "PERCEPCIÓN HUMANA DETECTADA",
+    Portuguese: "PERCEPÇÃO HUMANA DETECTADA",
+    "Mandarin Chinese": "检测到人类感知",
+    Italian: "PERCEZIONE UMANA RILEVATA",
+    Chinese: "检测到人类感知",
+    Japanese: "人間の知覚を検出",
+    Korean: "인간 인지 감지됨",
+    Dutch: "MENSELIJKE WAARNEMING GEDETECTEERD",
+    Swedish: "MÄNSKLIG UPPFATTNING UPPTÄCKT",
+    Greek: "ΑΝΙΧΝΕΥΘΗΚΕ ΑΝΘΡΩΠΙΝΗ ΑΝΤΙΛΗΨΗ",
+    Hindi: "मानव बोध का पता चला",
+    Thai: "ตรวจพบการรับรู้ของมนุษย์",
+  },
+  "SWITCHING TO TECHNOLOGICAL PERCEPTION": {
+    German: "UMSCHALTEN AUF TECHNOLOGISCHE WAHRNEHMUNG",
+    Turkish: "TEKNOLOJİK ALGIYA GEÇİLİYOR",
+    Arabic: "التبديل إلى الإدراك التكنولوجي",
+    English: "SWITCHING TO TECHNOLOGICAL PERCEPTION",
+    Russian: "ПЕРЕКЛЮЧЕНИЕ НА ТЕХНОЛОГИЧЕСКОЕ ВОСПРИЯТИЕ",
+    Polish: "PRZEŁĄCZANIE NA PERCEPCJĘ TECHNOLOGICZNĄ",
+    Vietnamese: "CHUYỂN SANG NHẬN THỨC CÔNG NGHỆ",
+    Kurdish: "TÊGIHIŞTINA TEKNOLOJÎK TÊ GUHERÎN",
+    Romanian: "TRECEREA LA PERCEPȚIA TEHNOLOGICĂ",
+    Bulgarian: "ПРЕКЛЮЧВАНЕ КЪМ ТЕХНОЛОГИЧНО ВЪЗПРИЯТИЕ",
+    French: "COMMUTATION VERS LA PERCEPTION TECHNOLOGIQUE",
+    Persian: "در حال تغییر به ادراک تکنولوژیکی",
+    Serbian: "ПРЕЛАЗАК НА ТЕХНОЛОШKУ ПЕРЦЕПЦИЈУ",
+    Spanish: "CAMBIANDO A PERCEPCIÓN TECNOLÓGICA",
+    Portuguese: "MUDANDO PARA PERCEPÇÃO TECNOLÓGICA",
+    "Mandarin Chinese": "切换到技术感知",
+    Italian: "PASSAGGIO ALLA PERCEZIONE TECNOLOGICA",
+    Chinese: "切换到技术感知",
+    Japanese: "技術的知覚に切り替え",
+    Korean: "기술적 인지로 전환",
+    Dutch: "OVERSCHAKELEN NAAR TECHNOLOGISCHE WAARNEMING",
+    Swedish: "VÄXLAR TILL TEKNOLOGISK UPPFATTNING",
+    Greek: "ΕΝΑΛΛΑΓΗ ΣΕ ΤΕΧΝΟΛΟΓΙΚΗ ΑΝΤΙΛΗΨΗ",
+    Hindi: "तकनीकी बोध पर स्विच किया जा रहा है",
+    Thai: "กำลังเปลี่ยนเป็นการรับรู้ทางเทคโนโลยี",
+  },
 };
 
 function lookupTranslation(message: string, language: string): string | null {
-  const langMap = TRANSLATIONS[message.toUpperCase()];
+  const key = message.toUpperCase().replace(/\n/g, " ");
+  const langMap = TRANSLATIONS[key];
   return langMap?.[language] ?? null;
 }
 
@@ -286,6 +341,7 @@ export class CyberOverlay {
     ctx.clearRect(0, 0, w, h);
 
     const glowPx = (v.glowPercent / 100) * 24;
+    const pad = 12;
 
     // Rectangle outline
     ctx.shadowColor = v.color;
@@ -295,13 +351,54 @@ export class CyberOverlay {
     const hl = v.lineThickness / 2;
     ctx.strokeRect(hl, hl, w - v.lineThickness, h - v.lineThickness);
 
-    // Text
+    // Text — word-wrapped
     ctx.font = `${v.fontWeight} ${v.fontSize}px ${v.fontFamily}`;
     ctx.fillStyle = v.color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.shadowBlur = glowPx;
-    ctx.fillText(this._text, w / 2, h / 2);
+
+    const maxW = w - pad * 2;
+    const lines: string[] = [];
+    for (const segment of this._text.split("\n")) {
+      const words = segment.split(" ");
+      let line = "";
+      for (const word of words) {
+        const test = line ? line + " " + word : word;
+        if (ctx.measureText(test).width > maxW && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+    }
+
+    // Rebalance: move words from long lines to short next lines
+    // to avoid orphaned words and make lines more balanced
+    for (let i = 0; i < lines.length - 1; i++) {
+      const cur = lines[i];
+      const nxt = lines[i + 1];
+      const curWords = cur.split(" ");
+      if (curWords.length < 2) continue;
+      // Try moving last word of cur to beginning of nxt
+      const lastWord = curWords[curWords.length - 1];
+      const curShort = curWords.slice(0, -1).join(" ");
+      const nxtLong = lastWord + " " + nxt;
+      if (ctx.measureText(curShort).width <= maxW &&
+          ctx.measureText(nxtLong).width <= maxW) {
+        lines[i] = curShort;
+        lines[i + 1] = nxtLong;
+      }
+    }
+
+    const lineH = v.fontSize * 1.3;
+    const totalH = lines.length * lineH;
+    const startY = (h - totalH) / 2 + lineH / 2;
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], w / 2, startY + i * lineH);
+    }
 
     this.texture.needsUpdate = true;
   }
