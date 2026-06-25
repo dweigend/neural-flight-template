@@ -18,6 +18,8 @@ export interface BerlinState extends ExperienceState {
   renderer: THREE.WebGLRenderer;
   /** The camera used for rendering */
   camera: THREE.PerspectiveCamera;
+  /** Loader camera centered on the player rig for tile selection */
+  tileSelectionCamera: THREE.PerspectiveCamera;
   /** The flight player controller */
   player: FlightPlayer;
   /** Target flight speed */

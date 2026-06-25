@@ -17,6 +17,11 @@ import { disposeObjectTree } from "./runtime/cleanup";
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA } from "$lib/config/flight";
 
+const TILE_SELECTION_FOV = 110;
+const scratchPosition = new THREE.Vector3();
+const scratchQuaternion = new THREE.Quaternion();
+const scratchScale = new THREE.Vector3();
+
 /**
  * Initializes the Berlin scene
  */
@@ -51,6 +56,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     tilesGroup,
     renderer: ctx.renderer,
     camera: player.camera,
+    tileSelectionCamera: createTileSelectionCamera(player.camera),
     player,
     targetSpeed: BERLIN_FLIGHT_BASE_SPEED,
     isLoading: true,
@@ -81,9 +87,10 @@ export function tick(state: BerlinState, ctx: TickContext) {
     s.player.rig.position.y,
   );
   s.player.tick(ctx.delta);
-  s.camera.updateMatrixWorld(true);
+  s.player.rig.updateMatrixWorld(true);
 
   if (s.tilesRuntime) {
+    syncTileSelectionCamera(s);
     s.tilesRuntime.update(getTileSelectionCameras(s), s.renderer);
   }
 
@@ -119,15 +126,7 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
 }
 
 function getTileSelectionCameras(state: BerlinState): readonly THREE.Camera[] {
-  if (!state.renderer.xr.isPresenting) {
-    state.camera.updateMatrixWorld(true);
-    return [state.camera];
-  }
-
-  state.renderer.xr.updateCamera(state.camera);
-  const xrCamera = state.renderer.xr.getCamera();
-  xrCamera.updateMatrixWorld(true);
-  return xrCamera.cameras;
+  return [state.tileSelectionCamera];
 }
 
 function getAltitudeScaledSpeed(baseSpeed: number, altitude: number): number {
@@ -185,4 +184,59 @@ async function loadTilesWhenConfigured(state: BerlinState): Promise<void> {
     console.error("[BerlinFlight] Failed to load tileset:", error);
     state.isLoading = false;
   }
+}
+
+function createTileSelectionCamera(
+  referenceCamera: THREE.PerspectiveCamera,
+): THREE.PerspectiveCamera {
+  const camera = new THREE.PerspectiveCamera(
+    Math.max(referenceCamera.fov, TILE_SELECTION_FOV),
+    referenceCamera.aspect || 1,
+    referenceCamera.near,
+    referenceCamera.far,
+  );
+  camera.updateProjectionMatrix();
+  return camera;
+}
+
+function syncTileSelectionCamera(state: BerlinState): void {
+  const viewCamera = getTileSelectionViewCamera(state);
+  const tileSelectionCamera = state.tileSelectionCamera;
+
+  // Extract the actual world position and rotation from the viewCamera (supporting headset tracking offset)
+  viewCamera.matrixWorld.decompose(scratchPosition, scratchQuaternion, scratchScale);
+
+  tileSelectionCamera.position.copy(scratchPosition);
+  tileSelectionCamera.quaternion.copy(scratchQuaternion);
+
+  const nextFov = Math.max(state.camera.fov, TILE_SELECTION_FOV);
+  const nextAspect = state.camera.aspect || 1;
+  if (
+    tileSelectionCamera.near !== state.camera.near ||
+    tileSelectionCamera.far !== state.camera.far ||
+    tileSelectionCamera.fov !== nextFov ||
+    tileSelectionCamera.aspect !== nextAspect
+  ) {
+    tileSelectionCamera.near = state.camera.near;
+    tileSelectionCamera.far = state.camera.far;
+    tileSelectionCamera.fov = nextFov;
+    tileSelectionCamera.aspect = nextAspect;
+    tileSelectionCamera.updateProjectionMatrix();
+  }
+
+  tileSelectionCamera.updateMatrixWorld(true);
+}
+
+function getTileSelectionViewCamera(state: BerlinState): THREE.Camera {
+  if (!state.renderer.xr.isPresenting) {
+    state.camera.updateMatrixWorld(true);
+    return state.camera;
+  }
+
+  state.renderer.xr.updateCamera(state.camera);
+  const xrCamera = state.renderer.xr.getCamera();
+  // DO NOT call xrCamera.updateMatrixWorld(true) here!
+  // WebXRManager already updates xrCamera's matrixWorld.
+  // Calling updateMatrixWorld(true) on xrCamera would overwrite it with its local position/quaternion (which are 0/identity).
+  return xrCamera;
 }

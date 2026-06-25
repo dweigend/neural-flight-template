@@ -71,4 +71,5 @@ export type {
 	WebSocketClientOptions,
 } from "./types/websocket";
 // Client
+export { createIcarosHostControlClient } from "./ws/icaros-host-control-client";
 export { createWebSocketClient } from "./ws/client.svelte";
