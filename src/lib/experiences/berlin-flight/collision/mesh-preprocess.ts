@@ -3,7 +3,7 @@ import type { BerlinTileMesh, TrackedTileMesh } from "./tile-mesh-types";
 
 export function preprocessTrackedMesh(
   mesh: BerlinTileMesh,
-  debugMaterial: THREE.MeshStandardMaterial,
+  collisionMaterial: THREE.Material | THREE.Material[],
 ): TrackedTileMesh | null {
   const geometry = mesh.geometry;
   const originalMaterial = mesh.material;
@@ -20,11 +20,10 @@ export function preprocessTrackedMesh(
   const positions = new Float32Array(positionAttribute.array);
   const worldPositions = new Float32Array(positions.length);
   const vertexCount = positionAttribute.count;
-  const colorAttribute = geometry.getAttribute("color");
+  const coneMaskAttribute = geometry.getAttribute("coneMask");
 
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  mesh.material = debugMaterial;
   copyWorldPositions(positions, worldPositions, vertexCount, mesh.matrixWorld);
 
   return {
@@ -34,10 +33,10 @@ export function preprocessTrackedMesh(
     worldPositions,
     vertexCount,
     vertexMask: new Uint8Array(vertexCount),
-    colorAttribute:
-      colorAttribute instanceof THREE.BufferAttribute ? colorAttribute : null,
+    coneMaskAttribute:
+      coneMaskAttribute instanceof THREE.BufferAttribute ? coneMaskAttribute : null,
     originalMaterial,
-    debugMaterial,
+    collisionMaterial,
     localBounds: geometry.boundingBox?.clone() ?? new THREE.Box3(),
     localSphere: geometry.boundingSphere?.clone() ?? new THREE.Sphere(),
     cachedBoundsMatrix: mesh.matrixWorld.clone(),

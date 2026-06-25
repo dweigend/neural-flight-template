@@ -12,9 +12,9 @@ export interface TrackedTileMesh {
   worldPositions: Float32Array;
   vertexCount: number;
   vertexMask: Uint8Array;
-  colorAttribute: THREE.BufferAttribute | null;
+  coneMaskAttribute: THREE.BufferAttribute | null;
   originalMaterial: THREE.Material | THREE.Material[];
-  debugMaterial: THREE.MeshStandardMaterial;
+  collisionMaterial: THREE.Material | THREE.Material[];
   localBounds: THREE.Box3;
   localSphere: THREE.Sphere;
   cachedBoundsMatrix: THREE.Matrix4;

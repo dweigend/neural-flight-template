@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import {
   createBerlinTileMaterial,
+  disposeClonedMaterial,
   disposeMaterial,
 } from "../runtime/tiles-material";
 import type { BerlinTileMesh, TrackedTileMesh } from "./tile-mesh-types";
 import { preprocessTrackedMesh } from "./mesh-preprocess";
+import { writeConeMaskAttributeForMesh } from "./vertex-color-writer";
 
 export class BerlinTileMeshRegistry {
   private readonly trackedByScene = new Map<THREE.Object3D, readonly TrackedTileMesh[]>();
@@ -32,8 +34,9 @@ export class BerlinTileMeshRegistry {
 
     for (const trackedMesh of trackedMeshes) {
       this.trackedMeshes.delete(trackedMesh);
-      disposeMaterial(trackedMesh.debugMaterial, disposedMaterials);
-      trackedMesh.colorAttribute = null;
+      disposeClonedMaterial(trackedMesh.collisionMaterial, disposedMaterials);
+      disposeMaterial(trackedMesh.originalMaterial, disposedMaterials);
+      trackedMesh.coneMaskAttribute = null;
     }
 
     this.trackedByScene.delete(root);
@@ -76,11 +79,15 @@ function collectTrackedMeshes(root: THREE.Object3D): readonly TrackedTileMesh[] 
 }
 
 function createTrackedMesh(mesh: BerlinTileMesh): TrackedTileMesh | null {
-  const debugMaterial = createBerlinTileMaterial();
-  const trackedMesh = preprocessTrackedMesh(mesh, debugMaterial);
+  const collisionMaterial = createBerlinTileMaterial(mesh.material);
+  const trackedMesh = preprocessTrackedMesh(mesh, collisionMaterial);
 
-  if (trackedMesh) return trackedMesh;
+  if (trackedMesh) {
+    writeConeMaskAttributeForMesh(trackedMesh);
+    trackedMesh.mesh.material = collisionMaterial;
+    return trackedMesh;
+  }
 
-  disposeMaterial(debugMaterial);
+  disposeClonedMaterial(collisionMaterial);
   return null;
 }

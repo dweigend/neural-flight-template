@@ -2,7 +2,7 @@ import { BERLIN_COLLISION } from "../constants";
 import { collectOverlappingConesForMesh } from "./cone-query";
 import type { BerlinConeVolume } from "./types";
 import type { TrackedTileMesh } from "./tile-mesh-types";
-import { writeVertexColorsForMesh } from "./vertex-color-writer";
+import { writeConeMaskAttributeForMesh } from "./vertex-color-writer";
 import { updateVertexMask } from "./vertex-mask";
 
 export interface BerlinCollisionDebugStats {
@@ -106,7 +106,7 @@ export class BerlinCollisionController {
 
       const overlappingCones = collectOverlappingConesForMesh(cones, mesh);
       updateVertexMask(mesh, overlappingCones);
-      writeVertexColorsForMesh(mesh);
+      writeConeMaskAttributeForMesh(mesh);
 
       this.verticesTestedLastTick += mesh.vertexCount;
       this.processedMeshesLastTick += 1;

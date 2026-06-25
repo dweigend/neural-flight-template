@@ -38,7 +38,6 @@ export const BERLIN_COLLISION = {
 
 export const BERLIN_TILE_LOOK = {
   NEUTRAL_COLOR: 0xbecad3,
-  COVERED_COLOR: 0xff78c8,
   METALNESS: 0,
   OPACITY: 0.68,
   ROUGHNESS: 0.52,
