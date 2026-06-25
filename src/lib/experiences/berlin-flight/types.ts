@@ -10,6 +10,11 @@ import type * as THREE from "three";
 export interface BerlinState extends ExperienceState {
   /** Root containing all Berlin-owned scene objects */
   sceneRoot: THREE.Group;
+  /** Berlin-only fill lights to improve neutral tile readability */
+  fillLights: {
+    hemisphere: THREE.HemisphereLight;
+    directional: THREE.DirectionalLight;
+  };
   /** The 3D Tiles runtime adapter */
   tilesRuntime: TilesRuntimeAdapter | null;
   /** Group containing all tiles for easy management */

@@ -23,6 +23,18 @@ const scratchPosition = new THREE.Vector3();
 const scratchQuaternion = new THREE.Quaternion();
 const scratchScale = new THREE.Vector3();
 
+function createBerlinFillLights(): {
+  directional: THREE.DirectionalLight;
+  hemisphere: THREE.HemisphereLight;
+} {
+  const hemisphere = new THREE.HemisphereLight(0xffffff, 0xa0a0a0, 0.95);
+
+  const directional = new THREE.DirectionalLight(0xffffff, 0.65);
+  directional.position.set(-160, 90, -120);
+
+  return { directional, hemisphere };
+}
+
 /**
  * Initializes the Berlin scene
  */
@@ -50,9 +62,14 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   gridHelper.position.y = -1;
   sceneRoot.add(gridHelper);
 
+  const fillLights = createBerlinFillLights();
+  sceneRoot.add(fillLights.hemisphere);
+  sceneRoot.add(fillLights.directional);
+
   // Initial state
   const state: BerlinState = {
     sceneRoot,
+    fillLights,
     tilesRuntime: null,
     tilesGroup,
     renderer: ctx.renderer,
@@ -125,6 +142,9 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   s.tilesRuntime?.setVisible(false);
   s.tilesRuntime?.dispose();
   s.tilesRuntime = null;
+
+  s.fillLights.hemisphere.removeFromParent();
+  s.fillLights.directional.removeFromParent();
 
   s.sceneRoot.removeFromParent();
   disposeObjectTree(s.sceneRoot);

@@ -1,6 +1,89 @@
 import { TilesRenderer } from "3d-tiles-renderer";
 import { GoogleCloudAuthPlugin } from "3d-tiles-renderer/plugins";
+import * as THREE from "three";
 import type { Camera, Group, WebGLRenderer } from "three";
+
+const BERLIN_TILE_GREY = 0xbeeeef;
+
+type TileLoadEvent = {
+  scene: THREE.Object3D;
+  tile: unknown;
+  type: "load-model";
+  url: string;
+};
+
+type TileMaterialMesh = THREE.Mesh<
+  THREE.BufferGeometry,
+  THREE.Material | THREE.Material[]
+>;
+
+type MaterialWithTextureMaps = THREE.Material & {
+  alphaMap?: THREE.Texture | null;
+  aoMap?: THREE.Texture | null;
+  bumpMap?: THREE.Texture | null;
+  displacementMap?: THREE.Texture | null;
+  emissiveMap?: THREE.Texture | null;
+  lightMap?: THREE.Texture | null;
+  map?: THREE.Texture | null;
+  metalnessMap?: THREE.Texture | null;
+  normalMap?: THREE.Texture | null;
+  roughnessMap?: THREE.Texture | null;
+  specularMap?: THREE.Texture | null;
+};
+
+function createBerlinTileMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: BERLIN_TILE_GREY,
+    depthTest: true,
+    depthWrite: true,
+    flatShading: true,
+    metalness: 0,
+    opacity: 0.6,
+    roughness: 0.5,
+    transparent: true,
+  });
+}
+
+function disposeMaterialTextures(material: THREE.Material): void {
+  const materialWithMaps = material as MaterialWithTextureMaps;
+
+  materialWithMaps.map?.dispose();
+  materialWithMaps.alphaMap?.dispose();
+  materialWithMaps.aoMap?.dispose();
+  materialWithMaps.bumpMap?.dispose();
+  materialWithMaps.displacementMap?.dispose();
+  materialWithMaps.emissiveMap?.dispose();
+  materialWithMaps.lightMap?.dispose();
+  materialWithMaps.metalnessMap?.dispose();
+  materialWithMaps.normalMap?.dispose();
+  materialWithMaps.roughnessMap?.dispose();
+  materialWithMaps.specularMap?.dispose();
+}
+
+function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
+  if (Array.isArray(material)) {
+    for (const entry of material) {
+      disposeMaterialTextures(entry);
+      entry.dispose();
+    }
+    return;
+  }
+
+  disposeMaterialTextures(material);
+  material.dispose();
+}
+
+function overrideTileSceneMaterials(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (!(child.geometry instanceof THREE.BufferGeometry)) return;
+
+    const mesh = child as TileMaterialMesh;
+    const originalMaterial = mesh.material;
+    mesh.material = createBerlinTileMaterial();
+    disposeMaterial(originalMaterial);
+  });
+}
 
 export interface TilesRuntimeDebugStats {
   hasRenderer: boolean;
@@ -121,12 +204,20 @@ export class TilesRuntimeAdapter {
     }
 
     renderer.errorTarget = 12;
+    renderer.addEventListener("load-model", this.handleLoadModel);
   }
+
+  private readonly handleLoadModel = (event: TileLoadEvent): void => {
+    overrideTileSceneMaterials(event.scene);
+  };
 
   /**
    * Updates the tileset every frame.
    */
-  public update(cameras: readonly Camera[], webglRenderer: WebGLRenderer): void {
+  public update(
+    cameras: readonly Camera[],
+    webglRenderer: WebGLRenderer,
+  ): void {
     if (this.disposed) return;
     if (!this.renderer) return;
     if (!this.renderer.group.visible) return;
@@ -180,6 +271,7 @@ export class TilesRuntimeAdapter {
     }
 
     this.renderer.group.removeFromParent();
+    this.renderer.removeEventListener("load-model", this.handleLoadModel);
     this.renderer.dispose();
     this.renderer = null;
     this.loadPromise = null;
