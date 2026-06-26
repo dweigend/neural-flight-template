@@ -107,6 +107,7 @@ export function tick(state: BerlinState, ctx: TickContext) {
     s.targetSpeed,
     s.player.rig.position.y,
   );
+  s.player.setXRPresenting(s.renderer.xr.isPresenting);
   s.player.tick(ctx.delta);
   s.player.rig.updateMatrixWorld(true);
   s.coneRuntime.update(s.player.rig.position);

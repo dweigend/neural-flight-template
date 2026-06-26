@@ -30,6 +30,7 @@ const DEFAULTS: Required<FlightPlayerConfig> = {
  */
 export class FlightPlayer {
 	readonly rig: THREE.Group;
+	readonly cameraMount: THREE.Group;
 	readonly camera: THREE.PerspectiveCamera;
 
 	velocity: number;
@@ -41,6 +42,7 @@ export class FlightPlayer {
 	private heading = 0;
 	private accelerating = false;
 	private braking = false;
+	private xrPresenting = false;
 
 	/** Mutable flight parameters — set via applySettings */
 	baseSpeed: number;
@@ -56,13 +58,15 @@ export class FlightPlayer {
 		this.terrainSlowdown = c.terrainSlowdown;
 
 		this.camera = new THREE.PerspectiveCamera(c.fov, 1, c.near, c.far);
+		this.cameraMount = new THREE.Group();
 		this.rig = new THREE.Group();
 		this.rig.position.set(
 			c.spawnPosition.x,
 			c.spawnPosition.y,
 			c.spawnPosition.z,
 		);
-		this.rig.add(this.camera);
+		this.cameraMount.add(this.camera);
+		this.rig.add(this.cameraMount);
 	}
 
 	updateOrientation(data: OrientationData): void {
@@ -73,6 +77,10 @@ export class FlightPlayer {
 	updateSpeed(cmd: SpeedCommand): void {
 		if (cmd.action === "accelerate") this.accelerating = cmd.active;
 		if (cmd.action === "brake") this.braking = cmd.active;
+	}
+
+	setXRPresenting(active: boolean): void {
+		this.xrPresenting = active;
 	}
 
 	tick(delta: number): void {
@@ -95,10 +103,7 @@ export class FlightPlayer {
 			-Math.cos(this.heading) * Math.cos(pitchRad),
 		);
 		this.rig.position.addScaledVector(forward, this.velocity * delta);
-
-		// YXZ Euler order: apply Yaw first, then Pitch, then Roll.
-		// This prevents gimbal-lock artifacts that occur with default XYZ in flight sims.
-		this.rig.rotation.set(-pitchRad, this.heading, -rollRad, "YXZ");
+		this.updateCameraMountRotation(pitchRad, rollRad);
 
 		this.clampToTerrain();
 	}
@@ -121,9 +126,23 @@ export class FlightPlayer {
 		);
 
 		this.rig.position.addScaledVector(forward, this.velocity * delta);
-		this.rig.rotation.set(-pitchRad, this.heading, -rollRad, "YXZ");
+		this.updateCameraMountRotation(pitchRad, rollRad);
 
 		this.clampToTerrain();
+	}
+
+	private updateCameraMountRotation(
+		pitchRad: number,
+		rollRad: number,
+	): void {
+		if (this.xrPresenting) {
+			this.cameraMount.rotation.set(0, 0, 0, "YXZ");
+			return;
+		}
+
+		// YXZ Euler order: apply Yaw first, then Pitch, then Roll.
+		// This prevents gimbal-lock artifacts that occur with default XYZ in flight sims.
+		this.cameraMount.rotation.set(-pitchRad, this.heading, -rollRad, "YXZ");
 	}
 
 	private updateVelocity(): void {

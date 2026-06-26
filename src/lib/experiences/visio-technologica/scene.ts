@@ -25,6 +25,8 @@ const DEFAULT_STEER_SPEED = 4.25;
 const DEFAULT_VERTICAL_STEER_SPEED = 2.5;
 const DEFAULT_BOB_AMPLITUDE = 0.08;
 const DEFAULT_BOB_SPEED = 0.45;
+const MAX_EXTERNAL_STEERING_DEGREES = 45;
+const MAX_FLIGHT_PITCH = Math.PI / 2 - 0.05;
 const WORLD_CAMERA_HEIGHT_OFFSET = 120;
 const WORLD_CAMERA_DISTANCE_OFFSET = 240;
 const WORLD_LOOK_AT_HEIGHT = 18;
@@ -71,12 +73,15 @@ interface WorldTileChunkRuntimeState {
 
 export interface VisioTechnologicaState extends ExperienceState {
   camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
   sky: THREE.Mesh;
   floorColor: string;
   keyboardControls: KeyboardCameraControls;
   keyboardControlsActive: boolean;
   steeringPitch: number;
   steeringRoll: number;
+  flightPitch: number;
+  flightYaw: number;
   driftSpeed: number;
   steerSpeed: number;
   verticalSteerSpeed: number;
@@ -147,12 +152,15 @@ export async function setup(
 
   const state: VisioTechnologicaState = {
     camera: ctx.camera,
+    renderer: ctx.renderer,
     sky,
     floorColor: DEFAULT_FLOOR_COLOR,
     keyboardControls,
     keyboardControlsActive: true,
     steeringPitch: 0,
     steeringRoll: 0,
+    flightPitch: ctx.camera.rotation.x,
+    flightYaw: ctx.camera.rotation.y,
     driftSpeed: DEFAULT_DRIFT_SPEED,
     steerSpeed: DEFAULT_STEER_SPEED,
     verticalSteerSpeed: DEFAULT_VERTICAL_STEER_SPEED,
@@ -196,9 +204,13 @@ export function tick(
 
   if (s.keyboardControlsActive) {
     updateKeyboardCameraControls(s.keyboardControls, s.camera, ctx.delta);
+    s.flightPitch = s.camera.rotation.x;
+    s.flightYaw = s.camera.rotation.y;
+  } else {
+    updateFlightHeading(s, ctx.delta);
   }
 
-  advanceCameraDrift(s.camera, s.driftSpeed, ctx.delta);
+  advanceCameraDrift(s, ctx.delta);
 
   s.flightHeight = s.camera.position.y;
   s.sky.position.copy(s.camera.position);
@@ -227,21 +239,55 @@ export function dispose(state: ExperienceState, scene: THREE.Scene): void {
 }
 
 function advanceCameraDrift(
-  camera: THREE.PerspectiveCamera,
-  driftSpeed: number,
+  state: VisioTechnologicaState,
   deltaSeconds: number,
 ): void {
-  if (driftSpeed === 0 || deltaSeconds === 0) {
+  if (state.driftSpeed === 0 || deltaSeconds === 0) {
     return;
   }
 
   const forwardDirection = new THREE.Vector3();
-  camera.getWorldDirection(forwardDirection);
+  if (state.keyboardControlsActive) {
+    state.camera.getWorldDirection(forwardDirection);
+  } else {
+    forwardDirection.setFromSphericalCoords(
+      1,
+      Math.PI / 2 - state.flightPitch,
+      state.flightYaw,
+    );
+  }
 
-  const driftTarget = camera.parent ?? camera;
+  const driftTarget = state.camera.parent ?? state.camera;
   driftTarget.position.addScaledVector(
     forwardDirection,
-    driftSpeed * deltaSeconds,
+    state.driftSpeed * deltaSeconds,
+  );
+}
+
+function updateFlightHeading(
+  state: VisioTechnologicaState,
+  deltaSeconds: number,
+): void {
+  const pitchInput = normalizeSteeringDegrees(state.steeringPitch);
+  const rollInput = normalizeSteeringDegrees(state.steeringRoll);
+
+  state.flightYaw -= rollInput * state.steerSpeed * deltaSeconds;
+  state.flightPitch = THREE.MathUtils.clamp(
+    state.flightPitch - pitchInput * state.verticalSteerSpeed * deltaSeconds,
+    -MAX_FLIGHT_PITCH,
+    MAX_FLIGHT_PITCH,
+  );
+
+  if (!state.renderer.xr.isPresenting) {
+    state.camera.rotation.set(state.flightPitch, state.flightYaw, 0, "YXZ");
+  }
+}
+
+function normalizeSteeringDegrees(value: number): number {
+  return THREE.MathUtils.clamp(
+    value / MAX_EXTERNAL_STEERING_DEGREES,
+    -1,
+    1,
   );
 }
 
