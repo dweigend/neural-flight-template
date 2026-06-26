@@ -120,7 +120,7 @@ export class TilesRuntimeAdapter {
   }
 
   private readonly handleLoadModel = (event: TileLoadEvent): void => {
-    this.meshRegistry.trackTileScene(event.scene);
+    this.meshRegistry.trackTileScene(event.scene, event.url);
   };
 
   private readonly handleDisposeModel = (event: TileDisposeEvent): void => {

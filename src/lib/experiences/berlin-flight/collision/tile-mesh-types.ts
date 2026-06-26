@@ -6,6 +6,7 @@ export type BerlinTileMesh = THREE.Mesh<
 >;
 
 export interface TrackedTileMesh {
+  sourceUrl: string;
   mesh: BerlinTileMesh;
   geometry: THREE.BufferGeometry;
   positions: Float32Array;

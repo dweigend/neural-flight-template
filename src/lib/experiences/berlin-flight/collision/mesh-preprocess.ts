@@ -27,6 +27,7 @@ export function preprocessTrackedMesh(
   copyWorldPositions(positions, worldPositions, vertexCount, mesh.matrixWorld);
 
   return {
+    sourceUrl: "",
     mesh,
     geometry,
     positions,

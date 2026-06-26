@@ -5,6 +5,7 @@ import {
   BERLIN_DEBUG_OVERLAY_WIDTH,
 } from "./config";
 import type { BerlinCollisionDebugStats } from "../collision/controller";
+import type { BerlinPlacementDebugSnapshot } from "../placement/types";
 import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
 
@@ -53,6 +54,18 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     processedMeshesLastTick: 0,
     verticesTestedLastTick: 0,
   };
+  private placementSnapshot: BerlinPlacementDebugSnapshot = {
+    counters: {
+      scannedBuildings: 0,
+      scannedCandidates: 0,
+      acceptedPoints: 0,
+      rejectedBySpacing: 0,
+      stalePointsRemoved: 0,
+      activeDebugMarkerCount: 0,
+    },
+    lastUpdateDurationMs: 0,
+    acceptedPoints: [],
+  };
 
   private disposed = false;
   private nextUpdate = 0;
@@ -97,6 +110,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     this.nextUpdate = elapsed + BERLIN_DEBUG_OVERLAY_UPDATE_SECONDS;
     state.tilesRuntime?.writeDebugStats(this.tilesStats);
     state.collisionController.writeDebugStats(this.collisionStats);
+    this.placementSnapshot = state.placementController.getSnapshot();
     if (!state.tilesRuntime) {
       this.resetTilesStats();
     }
@@ -136,28 +150,32 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
 
     ctx.font = "16px monospace";
     ctx.fillStyle = "#b9fbc0";
-    this.drawLine(1, `loading: ${state.isLoading}`);
-    this.drawLine(2, `disposed: ${state.isDisposed}`);
-    this.drawLine(3, `speed: ${state.player.velocity.toFixed(1)} m/s`);
-    this.drawLine(4, `tiles renderer: ${this.tilesStats.hasRenderer}`);
-    this.drawLine(5, `tiles visible: ${this.tilesStats.isVisible}`);
-    this.drawLine(
-      6,
+    const lines = [
+      `loading: ${state.isLoading}`,
+      `disposed: ${state.isDisposed}`,
+      `speed: ${state.player.velocity.toFixed(1)} m/s`,
+      `tiles renderer: ${this.tilesStats.hasRenderer}`,
+      `tiles visible: ${this.tilesStats.isVisible}`,
       `load progress: ${this.tilesStats.loadProgress.toFixed(2)}`,
-    );
-    this.drawLine(7, `visible tiles: ${this.tilesStats.visibleTiles}`);
-    this.drawLine(8, `active tiles: ${this.tilesStats.activeTiles}`);
-    this.drawLine(9, `tracked meshes: ${this.tilesStats.trackedMeshes}`);
-    this.drawLine(10, `active cones: ${this.collisionStats.activeCones}`);
-    this.drawLine(11, `dirty meshes: ${this.collisionStats.dirtyMeshes}`);
-    this.drawLine(
-      12,
+      `visible tiles: ${this.tilesStats.visibleTiles}`,
+      `active tiles: ${this.tilesStats.activeTiles}`,
+      `tracked meshes: ${this.tilesStats.trackedMeshes}`,
+      `active cones: ${this.collisionStats.activeCones}`,
+      `dirty meshes: ${this.collisionStats.dirtyMeshes}`,
       `meshes/tick: ${this.collisionStats.processedMeshesLastTick}`,
-    );
-    this.drawLine(
-      13,
       `vertices/tick: ${this.collisionStats.verticesTestedLastTick}`,
-    );
+      `placement buildings: ${this.placementSnapshot.counters.scannedBuildings}`,
+      `placement candidates: ${this.placementSnapshot.counters.scannedCandidates}`,
+      `placement accepted: ${this.placementSnapshot.counters.acceptedPoints}`,
+      `spacing rejects: ${this.placementSnapshot.counters.rejectedBySpacing}`,
+      `placement stale: ${this.placementSnapshot.counters.stalePointsRemoved}`,
+      `placement ms: ${this.placementSnapshot.lastUpdateDurationMs.toFixed(2)}`,
+      `placement markers: ${this.placementSnapshot.counters.activeDebugMarkerCount}`,
+    ];
+
+    for (let index = 0; index < lines.length; index += 1) {
+      this.drawLine(index + 1, lines[index]);
+    }
   }
 
   private drawLine(index: number, text: string): void {

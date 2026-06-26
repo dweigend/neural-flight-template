@@ -13,10 +13,10 @@ export class BerlinTileMeshRegistry {
   private readonly trackedMeshes = new Set<TrackedTileMesh>();
   private version = 0;
 
-  public trackTileScene(root: THREE.Object3D): void {
+  public trackTileScene(root: THREE.Object3D, sourceUrl: string): void {
     if (this.trackedByScene.has(root)) return;
 
-    const trackedMeshes = collectTrackedMeshes(root);
+    const trackedMeshes = collectTrackedMeshes(root, sourceUrl);
     this.trackedByScene.set(root, trackedMeshes);
 
     for (const trackedMesh of trackedMeshes) {
@@ -62,14 +62,17 @@ export class BerlinTileMeshRegistry {
   }
 }
 
-function collectTrackedMeshes(root: THREE.Object3D): readonly TrackedTileMesh[] {
+function collectTrackedMeshes(
+  root: THREE.Object3D,
+  sourceUrl: string,
+): readonly TrackedTileMesh[] {
   const trackedMeshes: TrackedTileMesh[] = [];
 
   root.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
     if (!(child.geometry instanceof THREE.BufferGeometry)) return;
 
-    const trackedMesh = createTrackedMesh(child as BerlinTileMesh);
+    const trackedMesh = createTrackedMesh(child as BerlinTileMesh, sourceUrl);
     if (!trackedMesh) return;
 
     trackedMeshes.push(trackedMesh);
@@ -78,12 +81,16 @@ function collectTrackedMeshes(root: THREE.Object3D): readonly TrackedTileMesh[] 
   return trackedMeshes;
 }
 
-function createTrackedMesh(mesh: BerlinTileMesh): TrackedTileMesh | null {
+function createTrackedMesh(
+  mesh: BerlinTileMesh,
+  sourceUrl: string,
+): TrackedTileMesh | null {
   const collisionMaterial = createBerlinTileMaterial(mesh.material);
   const trackedMesh = preprocessTrackedMesh(mesh, collisionMaterial);
 
   if (trackedMesh) {
     writeConeMaskAttributeForMesh(trackedMesh);
+    trackedMesh.sourceUrl = sourceUrl;
     trackedMesh.mesh.material = collisionMaterial;
     return trackedMesh;
   }

@@ -489,3 +489,75 @@ Return:
 ## Practical note
 
 The first real implementation step should be Phase 2. If the OSM source exposes clean footprint vertices, the rest of the pipeline is straightforward. If it only exposes triangulated render meshes, the extractor design needs to be tighter before writing the runtime controller.
+
+## Phase 2 inspection notes
+
+Current Berlin runtime does not instantiate a separate OSM Buildings source yet.
+It only loads one streamed 3D Tiles source through `TilesRuntimeAdapter` and
+attaches the loaded tile scene into `state.tilesGroup`.
+
+Narrowest existing mesh hook:
+
+- `TilesRuntimeAdapter.handleLoadModel()` in `runtime/tiles-runtime.ts`
+- called from the `load-model` event wired in `runtime/tiles-renderer-config.ts`
+- receives `{ scene, tile, url }` for each streamed tile content payload
+
+What is available there today:
+
+- `scene`: the loaded tile content root `THREE.Object3D`
+- `tile`: 3D Tiles tile record with `content.uri`, `transform`, `boundingVolume`,
+  `geometricError`, `extensions`, `extras`, traversal state, and parent/child links
+- traversed child meshes expose standard `THREE.BufferGeometry` attributes only
+- current app code already proves mesh inspection is viable through
+  `BerlinTileMeshRegistry.trackTileScene(root)`
+
+Coordinate-space findings:
+
+- `loadTilesWhenConfigured()` applies `getECEFToLocalMatrix(BERLIN_MITTE_ORIGIN)`
+  to `tiles.group`
+- local world frame is `X = East`, `Y = Up`, `Z = South`, so world `y` is the up axis
+- tile content scenes are premultiplied by the tile transform inside
+  `3d-tiles-renderer` before `load-model` is emitted
+- child mesh `matrixWorld` becomes final Berlin-local world space after the tile scene
+  is attached under `tiles.group` and `updateMatrixWorld(true)` runs
+- current collision preprocessing already converts local positions to world positions
+  with `mesh.matrixWorld`, so transformed vertices can be read directly that way
+
+Metadata / identity findings:
+
+- current Berlin runtime does not register extra glTF metadata plugins
+- for generic glTF tile content, no app-level building metadata is surfaced today
+- for b3dm / i3dm content, the loader library can attach `featureTable` and
+  `batchTable` to the loaded tile scene, but Berlin does not currently read them
+- current hook is tile-scene level, not per-building semantic level
+
+Implication for roof-corner placement:
+
+- if the future OSM source yields one mesh per building, `handleLoadModel()` plus
+  mesh traversal is enough
+- if the future OSM source yields triangulated chunk meshes without per-building ids,
+  the extractor will only see render triangles and needs a deterministic fallback key
+
+Recommended deterministic fallback key if no stable building id exists:
+
+1. tile content uri
+2. mesh path within the loaded tile scene
+3. quantized mesh-local or world-space bounding-box center
+
+This gives a stable source key across rescans of the same loaded content, but not a
+guarantee across source dataset revisions.
+
+## Heatmap seam note
+
+Current runtime pipeline is:
+
+1. source discovery
+2. per-building corner extraction
+3. `applyBerlinCornerCandidateStage(...)`
+4. deterministic global spacing filter
+5. accepted-point registry
+
+`applyBerlinCornerCandidateStage(...)` is the only planned extension seam for a later
+heatmap phase. It currently returns candidates unchanged. Future density logic can
+score or drop candidates there before final acceptance without rewriting the
+extractor, spacing filter, or registry.
