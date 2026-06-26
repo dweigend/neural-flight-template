@@ -1,13 +1,16 @@
+import {
+  PUBLIC_BERLIN_ION_ASSET_ID,
+  PUBLIC_BERLIN_TILES_URL,
+  PUBLIC_CESIUM_ION_TOKEN,
+} from "$env/static/public";
+import { GoogleCloudAuthPlugin } from "3d-tiles-renderer/plugins";
 import { TilesRenderer } from "3d-tiles-renderer";
 import * as THREE from "three";
 import type { Camera, Group, WebGLRenderer } from "three";
 import { BerlinTileMeshRegistry } from "../collision/mesh-tracker";
 import type { TrackedTileMesh } from "../collision/tile-mesh-types";
-import {
-  configureBerlinTilesRenderer,
-  type TileDisposeEvent,
-  type TileLoadEvent,
-} from "./tiles-renderer-config";
+import { BERLIN_MITTE_ORIGIN } from "../geo/berlin-mitte-origin";
+import { getECEFToLocalMatrix } from "../geo/coordinates";
 
 export interface TilesRuntimeDebugStats {
   hasRenderer: boolean;
@@ -18,6 +21,19 @@ export interface TilesRuntimeDebugStats {
   activeTiles: number;
   trackedMeshes: number;
 }
+
+type TileLoadEvent = {
+  scene: THREE.Object3D;
+  tile: unknown;
+  type: "load-model";
+  url: string;
+};
+
+type TileDisposeEvent = {
+  scene: THREE.Object3D;
+  tile: unknown;
+  type: "dispose-model";
+};
 
 /**
  * Adapter for the 3D Tiles runtime.
@@ -35,6 +51,27 @@ export class TilesRuntimeAdapter {
   constructor(url: string, token: string) {
     this.url = url;
     this.token = token;
+  }
+
+  public static isSourceConfigured(): boolean {
+    return Boolean(
+      PUBLIC_BERLIN_TILES_URL ||
+        (PUBLIC_CESIUM_ION_TOKEN && Number(PUBLIC_BERLIN_ION_ASSET_ID)),
+    );
+  }
+
+  public static async create(
+    group: Group,
+    signal?: AbortSignal,
+  ): Promise<TilesRuntimeAdapter> {
+    const { url, token } = await resolveBerlinTileset();
+    const runtime = new TilesRuntimeAdapter(url, token);
+    const renderer = await runtime.loadTiles(group, signal);
+    const localMatrix = getECEFToLocalMatrix(BERLIN_MITTE_ORIGIN);
+    renderer.group.matrixAutoUpdate = false;
+    renderer.group.matrix.copy(localMatrix);
+    renderer.group.updateMatrixWorld(true);
+    return runtime;
   }
 
   /**
@@ -110,13 +147,31 @@ export class TilesRuntimeAdapter {
   }
 
   private configureRenderer(renderer: TilesRenderer): void {
-    configureBerlinTilesRenderer(
-      renderer,
-      this.url,
-      this.token,
-      this.handleLoadModel,
-      this.handleDisposeModel,
-    );
+    const isGoogleTiles = this.url.includes("tile.googleapis.com");
+
+    if (isGoogleTiles) {
+      const parsedUrl = new URL(this.url);
+      const apiKey = parsedUrl.searchParams.get("key");
+
+      if (apiKey) {
+        renderer.registerPlugin(
+          new GoogleCloudAuthPlugin({
+            apiToken: apiKey,
+            autoRefreshToken: true,
+          }),
+        );
+      }
+    }
+
+    if (this.token && !isGoogleTiles) {
+      renderer.fetchOptions.headers = {
+        Authorization: `Bearer ${this.token}`,
+      };
+    }
+
+    renderer.errorTarget = 12;
+    renderer.addEventListener("load-model", this.handleLoadModel);
+    renderer.addEventListener("dispose-model", this.handleDisposeModel);
   }
 
   private readonly handleLoadModel = (event: TileLoadEvent): void => {
@@ -206,4 +261,45 @@ export class TilesRuntimeAdapter {
     this.loadPromise = null;
     this.activeCameras.clear();
   }
+}
+
+async function resolveBerlinTileset(): Promise<{
+  url: string;
+  token: string;
+}> {
+  if (PUBLIC_BERLIN_TILES_URL) {
+    return {
+      url: PUBLIC_BERLIN_TILES_URL,
+      token: PUBLIC_CESIUM_ION_TOKEN || "",
+    };
+  }
+
+  const assetId = Number(PUBLIC_BERLIN_ION_ASSET_ID);
+  if (!PUBLIC_CESIUM_ION_TOKEN || !assetId) {
+    throw new Error(
+      "[BerlinFlight] Missing Cesium Ion credentials in public env.",
+    );
+  }
+
+  const endpoint = `https://api.cesium.com/v1/assets/${assetId}/endpoint?access_token=${PUBLIC_CESIUM_ION_TOKEN}`;
+  const response = await fetch(endpoint);
+  if (!response.ok) {
+    throw new Error(
+      `[BerlinFlight] Failed to resolve Cesium Ion asset: ${response.status} ${await response.text()}`,
+    );
+  }
+
+  const data = await response.json();
+  const tilesetUrl = data.url || data.options?.url;
+
+  if (!tilesetUrl) {
+    throw new Error(
+      `[BerlinFlight] Cesium Ion response missing tileset URL. Response: ${JSON.stringify(data)}`,
+    );
+  }
+
+  return {
+    url: tilesetUrl,
+    token: data.accessToken || "",
+  };
 }

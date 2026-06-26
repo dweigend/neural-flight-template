@@ -13,14 +13,14 @@ import { BerlinConeGridRuntime } from "./runtime/cone-grid-runtime";
 import { BerlinCollisionController } from "./collision/controller";
 import { BerlinConePlacementController } from "./cone-placement/controller";
 import { BerlinPlacementController } from "./placement/controller";
-import { loadTilesWhenConfigured } from "./runtime/tiles-load";
-import {
-  createTileSelectionCamera,
-  getTileSelectionCameras,
-  syncTileSelectionCamera,
-} from "./runtime/tiles-selection-camera";
+import { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA } from "$lib/config/flight";
+
+const TILE_SELECTION_FOV = 110;
+const scratchPosition = new THREE.Vector3();
+const scratchQuaternion = new THREE.Quaternion();
+const scratchScale = new THREE.Vector3();
 
 function createBerlinFillLights(): {
   directional: THREE.DirectionalLight;
@@ -70,6 +70,13 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   const collisionController = new BerlinCollisionController();
   const placementController = new BerlinPlacementController();
   const conePlacementController = new BerlinConePlacementController();
+  const tileSelectionCamera = new THREE.PerspectiveCamera(
+    Math.max(player.camera.fov, TILE_SELECTION_FOV),
+    player.camera.aspect || 1,
+    player.camera.near,
+    player.camera.far,
+  );
+  tileSelectionCamera.updateProjectionMatrix();
 
   // Initial state
   const state: BerlinState = {
@@ -83,7 +90,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     conePlacementController,
     renderer: ctx.renderer,
     camera: player.camera,
-    tileSelectionCamera: createTileSelectionCamera(player.camera),
+    tileSelectionCamera,
     player,
     targetSpeed: BERLIN_FLIGHT_BASE_SPEED,
     isLoading: true,
@@ -124,7 +131,7 @@ export function tick(state: BerlinState, ctx: TickContext) {
     Scheduler.setXRSession(xrSession as XRSession);
 
     syncTileSelectionCamera(s);
-    s.tilesRuntime.update(getTileSelectionCameras(s), s.renderer);
+    s.tilesRuntime.update([s.tileSelectionCamera], s.renderer);
     s.placementController.update(
       s.player.rig.position,
       s.tilesRuntime.getTrackedTileMeshes(),
@@ -154,6 +161,73 @@ export function tick(state: BerlinState, ctx: TickContext) {
   }
 
   return { state: s };
+}
+
+async function loadTilesWhenConfigured(state: BerlinState): Promise<void> {
+  if (!TilesRuntimeAdapter.isSourceConfigured()) {
+    state.isLoading = false;
+    return;
+  }
+
+  try {
+    const runtime = await TilesRuntimeAdapter.create(
+      state.tilesGroup,
+      state.abortController.signal,
+    );
+    if (state.isDisposed || state.abortController.signal.aborted) {
+      runtime.dispose();
+      return;
+    }
+
+    state.tilesRuntime = runtime;
+    state.isLoading = false;
+  } catch (error) {
+    if (state.isDisposed || state.abortController.signal.aborted) return;
+
+    console.error("[BerlinFlight] Failed to load tileset:", error);
+    state.isLoading = false;
+  }
+}
+
+function syncTileSelectionCamera(state: BerlinState): void {
+  const viewCamera = getTileSelectionViewCamera(state);
+  const tileSelectionCamera = state.tileSelectionCamera;
+
+  viewCamera.matrixWorld.decompose(
+    scratchPosition,
+    scratchQuaternion,
+    scratchScale,
+  );
+
+  tileSelectionCamera.position.copy(scratchPosition);
+  tileSelectionCamera.quaternion.copy(scratchQuaternion);
+
+  const nextFov = Math.max(state.camera.fov, TILE_SELECTION_FOV);
+  const nextAspect = state.camera.aspect || 1;
+  if (
+    tileSelectionCamera.near !== state.camera.near ||
+    tileSelectionCamera.far !== state.camera.far ||
+    tileSelectionCamera.fov !== nextFov ||
+    tileSelectionCamera.aspect !== nextAspect
+  ) {
+    tileSelectionCamera.near = state.camera.near;
+    tileSelectionCamera.far = state.camera.far;
+    tileSelectionCamera.fov = nextFov;
+    tileSelectionCamera.aspect = nextAspect;
+    tileSelectionCamera.updateProjectionMatrix();
+  }
+
+  tileSelectionCamera.updateMatrixWorld(true);
+}
+
+function getTileSelectionViewCamera(state: BerlinState): THREE.Camera {
+  if (!state.renderer.xr.isPresenting) {
+    state.camera.updateMatrixWorld(true);
+    return state.camera;
+  }
+
+  state.renderer.xr.updateCamera(state.camera);
+  return state.renderer.xr.getCamera();
 }
 
 /**

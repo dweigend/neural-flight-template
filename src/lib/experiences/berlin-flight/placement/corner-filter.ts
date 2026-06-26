@@ -1,5 +1,4 @@
 import { BERLIN_PLACEMENT } from "./config";
-import { applyBerlinCornerCandidateStage } from "./candidate-stage";
 import type {
   BerlinAcceptedShadowOriginPoint,
   BerlinRoofCornerCandidate,
@@ -13,15 +12,14 @@ export interface BerlinCornerFilterResult {
 export function filterBerlinRoofCornerCandidates(
   candidates: readonly BerlinRoofCornerCandidate[],
 ): BerlinCornerFilterResult {
-  const stagedCandidates = applyBerlinCornerCandidateStage(candidates);
-  if (stagedCandidates.length === 0) {
+  if (candidates.length === 0) {
     return {
       acceptedPoints: [],
       rejectedBySpacing: 0,
     };
   }
 
-  const sortedCandidates = [...stagedCandidates].sort(compareRoofCornerCandidates);
+  const sortedCandidates = [...candidates].sort(compareRoofCornerCandidates);
   const acceptedPoints: BerlinAcceptedShadowOriginPoint[] = [];
   const minDistanceSq =
     BERLIN_PLACEMENT.MIN_REQUIRED_DISTANCE *

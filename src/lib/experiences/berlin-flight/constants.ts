@@ -3,7 +3,6 @@ import {
   PUBLIC_BERLIN_ION_ASSET_ID,
   PUBLIC_BERLIN_TILES_URL,
 } from "$env/static/public";
-export { BERLIN_CONE_GRID } from "./runtime/cone-grid-config";
 
 /**
  * Berlin Flight Experience Constants

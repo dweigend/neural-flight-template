@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { BERLIN_MITTE_ORIGIN } from "./berlin-mitte-origin";
 import type { GeoPoint, WorldPoint } from "./types";
 
 /**
