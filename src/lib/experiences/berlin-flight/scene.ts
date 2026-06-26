@@ -11,6 +11,8 @@ import {
 import { disposeObjectTree } from "./runtime/cleanup";
 import { BerlinConeGridRuntime } from "./runtime/cone-grid-runtime";
 import { BerlinCollisionController } from "./collision/controller";
+import { BerlinConePlacementController } from "./cone-placement/controller";
+import { BerlinPlacementController } from "./placement/controller";
 import { loadTilesWhenConfigured } from "./runtime/tiles-load";
 import {
   createTileSelectionCamera,
@@ -66,6 +68,8 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   const coneRuntime = new BerlinConeGridRuntime();
   sceneRoot.add(coneRuntime.root);
   const collisionController = new BerlinCollisionController();
+  const placementController = new BerlinPlacementController();
+  const conePlacementController = new BerlinConePlacementController();
 
   // Initial state
   const state: BerlinState = {
@@ -75,6 +79,8 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     tilesGroup,
     coneRuntime,
     collisionController,
+    placementController,
+    conePlacementController,
     renderer: ctx.renderer,
     camera: player.camera,
     tileSelectionCamera: createTileSelectionCamera(player.camera),
@@ -126,6 +132,16 @@ export function tick(state: BerlinState, ctx: TickContext) {
       s.tilesRuntime.getTrackedTileMeshes(),
       s.tilesRuntime.getTrackedTileMeshVersion(),
     );
+    s.placementController.update(
+      s.player.rig.position,
+      s.tilesRuntime.getTrackedTileMeshes(),
+      s.tilesRuntime.getTrackedTileMeshVersion(),
+    );
+    s.conePlacementController.update(
+      s.placementController.getAcceptedPoints(),
+      s.tilesRuntime.getTrackedTileMeshes(),
+      s.tilesRuntime.getTrackedTileMeshVersion(),
+    );
   }
 
   if (s.debugEnabled) {
@@ -154,6 +170,8 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   s.tilesRuntime?.dispose();
   s.tilesRuntime = null;
   s.coneRuntime.dispose();
+  s.conePlacementController.dispose();
+  s.placementController.dispose();
 
   s.fillLights.hemisphere.removeFromParent();
   s.fillLights.directional.removeFromParent();
