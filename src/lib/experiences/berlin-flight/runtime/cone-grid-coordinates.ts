@@ -6,6 +6,20 @@ export type ConeChunkCoordinate = {
   z: number;
 };
 
+export type ConeGridCoordinate = {
+  x: number;
+  z: number;
+};
+
+export function getConeGridCoordinate(
+  position: THREE.Vector3,
+): ConeGridCoordinate {
+  return {
+    x: Math.floor(position.x / BERLIN_CONE_GRID.SPACING),
+    z: Math.floor(position.z / BERLIN_CONE_GRID.SPACING),
+  };
+}
+
 export function getConeChunkCoordinate(
   position: THREE.Vector3,
 ): ConeChunkCoordinate {
@@ -34,6 +48,10 @@ export function collectConeChunkKeys(
 }
 
 export function getConeChunkKey(coordinate: ConeChunkCoordinate): string {
+  return `${coordinate.x}:${coordinate.z}`;
+}
+
+export function getConeGridKey(coordinate: ConeGridCoordinate): string {
   return `${coordinate.x}:${coordinate.z}`;
 }
 

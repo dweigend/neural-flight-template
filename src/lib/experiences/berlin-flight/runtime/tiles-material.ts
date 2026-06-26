@@ -20,7 +20,11 @@ type MaterialWithTextureMaps = THREE.Material & {
 };
 
 const shaderNeutralColor = new THREE.Color(BERLIN_TILE_LOOK.NEUTRAL_COLOR);
-
+const shaderNeutralLightDirection = new THREE.Vector3(
+  BERLIN_TILE_LOOK.NEUTRAL_SHADE_LIGHT_DIRECTION.x,
+  BERLIN_TILE_LOOK.NEUTRAL_SHADE_LIGHT_DIRECTION.y,
+  BERLIN_TILE_LOOK.NEUTRAL_SHADE_LIGHT_DIRECTION.z,
+).normalize();
 export function createBerlinTileMaterial(
   sourceMaterial: THREE.Material | THREE.Material[],
 ): THREE.Material | THREE.Material[] {
@@ -79,11 +83,6 @@ function cloneBerlinTileMaterial(sourceMaterial: THREE.Material): THREE.Material
   if ("opacity" in material) {
     material.opacity = BERLIN_TILE_LOOK.OPACITY;
   }
-  if ("flatShading" in material) {
-    (
-      material as THREE.MeshPhongMaterial | THREE.MeshStandardMaterial
-    ).flatShading = true;
-  }
   if ("transparent" in material) {
     material.transparent = true;
   }
@@ -91,29 +90,46 @@ function cloneBerlinTileMaterial(sourceMaterial: THREE.Material): THREE.Material
   material.onBeforeCompile = (shader: ShaderCompileParameters, renderer) => {
     previousOnBeforeCompile(shader, renderer);
     shader.uniforms.uBerlinNeutralColor = { value: shaderNeutralColor };
+    shader.uniforms.uBerlinOutsideOpacity = { value: BERLIN_TILE_LOOK.OPACITY };
+    shader.uniforms.uBerlinNeutralLightDirection = {
+      value: shaderNeutralLightDirection,
+    };
+    shader.uniforms.uBerlinNeutralShadeAmbient = {
+      value: BERLIN_TILE_LOOK.NEUTRAL_SHADE_AMBIENT,
+    };
+    shader.uniforms.uBerlinNeutralShadeHemisphere = {
+      value: BERLIN_TILE_LOOK.NEUTRAL_SHADE_HEMISPHERE,
+    };
+    shader.uniforms.uBerlinNeutralShadeDirectional = {
+      value: BERLIN_TILE_LOOK.NEUTRAL_SHADE_DIRECTIONAL,
+    };
 
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        "#include <common>\nattribute float coneMask;\nvarying float vBerlinConeMask;",
+        "#include <common>\nattribute float coneMask;\nvarying float vBerlinConeMask;\nvarying vec3 vBerlinWorldPosition;",
       )
       .replace(
         "#include <begin_vertex>",
-        "#include <begin_vertex>\nvBerlinConeMask = coneMask;",
+        "#include <begin_vertex>\nvBerlinConeMask = coneMask;\nvBerlinWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
       );
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        "#include <common>\nuniform vec3 uBerlinNeutralColor;\nvarying float vBerlinConeMask;",
+        "#include <common>\nuniform vec3 uBerlinNeutralColor;\nuniform float uBerlinOutsideOpacity;\nuniform vec3 uBerlinNeutralLightDirection;\nuniform float uBerlinNeutralShadeAmbient;\nuniform float uBerlinNeutralShadeHemisphere;\nuniform float uBerlinNeutralShadeDirectional;\nvarying float vBerlinConeMask;\nvarying vec3 vBerlinWorldPosition;",
+      )
+      .replace(
+        "#include <normal_fragment_begin>",
+        "#include <normal_fragment_begin>\nfloat berlinConeMaskForNormal = clamp(vBerlinConeMask, 0.0, 1.0);\nvec3 berlinFlatNormal = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));\nnormal = normalize(mix(berlinFlatNormal, normal, berlinConeMaskForNormal));",
       )
       .replace(
         "#include <map_fragment>",
-        "vec3 berlinFlatColor = uBerlinNeutralColor;\n#include <map_fragment>\ndiffuseColor.rgb = mix(berlinFlatColor, diffuseColor.rgb, clamp(vBerlinConeMask, 0.0, 1.0));",
+        "float berlinConeMask = clamp(vBerlinConeMask, 0.0, 1.0);\nvec3 berlinFlatColor = uBerlinNeutralColor;\nvec3 berlinWorldNormal = normalize(cross(dFdx(vBerlinWorldPosition), dFdy(vBerlinWorldPosition)));\nfloat berlinDirectional = max(dot(berlinWorldNormal, normalize(uBerlinNeutralLightDirection)), 0.0);\nfloat berlinHemisphere = berlinWorldNormal.y * 0.5 + 0.5;\nfloat berlinShade = clamp(\n  uBerlinNeutralShadeAmbient +\n    berlinHemisphere * uBerlinNeutralShadeHemisphere +\n    berlinDirectional * uBerlinNeutralShadeDirectional,\n  0.0,\n  1.0\n);\nvec3 berlinShadedFlatColor = berlinFlatColor * berlinShade;\n#include <map_fragment>\ndiffuseColor.rgb = mix(berlinShadedFlatColor, diffuseColor.rgb, berlinConeMask);\ndiffuseColor.a = mix(uBerlinOutsideOpacity, 1.0, berlinConeMask);",
       );
   };
   material.customProgramCacheKey = () =>
-    `${previousProgramCacheKey?.() ?? material.type}:berlin-cone-mask-v2`;
+    `${previousProgramCacheKey?.() ?? material.type}:berlin-cone-mask-v3`;
 
   return material;
 }
