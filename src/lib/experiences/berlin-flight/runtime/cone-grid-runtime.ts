@@ -3,7 +3,7 @@ import type {
   BerlinConeChunkSnapshot,
   BerlinConeVolume,
 } from "../collision/types";
-import { BERLIN_CONE_GRID } from "../constants";
+import { BERLIN_CONE_GRID } from "./cone-grid-config";
 import {
   createConeGridChunk,
   type ConeGridChunk,
@@ -179,8 +179,12 @@ export class BerlinConeGridRuntime {
 
       for (let coneIndex = 0; coneIndex < chunk.allCones.length; coneIndex += 1) {
         const cone = chunk.allCones[coneIndex];
-        const coneGridX = Math.round(cone.center.x / BERLIN_CONE_GRID.SPACING);
-        const coneGridZ = Math.round(cone.center.z / BERLIN_CONE_GRID.SPACING);
+        const coneGridX = Math.round(
+          cone.baseCenter.x / BERLIN_CONE_GRID.SPACING,
+        );
+        const coneGridZ = Math.round(
+          cone.baseCenter.z / BERLIN_CONE_GRID.SPACING,
+        );
         const isVisible =
           Math.abs(coneGridX - observerGrid.x) <=
             BERLIN_CONE_GRID.VISIBLE_RADIUS_TILES &&

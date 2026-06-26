@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import type { BerlinConeVolume } from "../collision/types";
-import { BERLIN_CONE_GRID } from "../constants";
+import { BERLIN_CONE_GRID } from "./cone-grid-config";
 import type { ConeChunkCoordinate } from "./cone-grid-coordinates";
 import { getConeChunkKey } from "./cone-grid-coordinates";
 
 const instanceDummy = new THREE.Object3D();
+const downAxis = new THREE.Vector3(0, -1, 0);
 
 export type ConeGridChunk = {
   allCones: readonly BerlinConeVolume[];
@@ -52,14 +53,24 @@ export function createConeGridChunk(
       const matrix = instanceDummy.matrix.clone();
       mesh.setMatrixAt(instanceIndex, matrix);
       matrices.push(matrix);
+      const tip = new THREE.Vector3(
+        instanceDummy.position.x,
+        instanceDummy.position.y + BERLIN_CONE_GRID.CONE_HEIGHT / 2,
+        instanceDummy.position.z,
+      );
+      const baseCenter = new THREE.Vector3(
+        instanceDummy.position.x,
+        instanceDummy.position.y - BERLIN_CONE_GRID.CONE_HEIGHT / 2,
+        instanceDummy.position.z,
+      );
       allCones.push({
-        center: new THREE.Vector3(
-          instanceDummy.position.x,
-          instanceDummy.position.y - BERLIN_CONE_GRID.CONE_HEIGHT / 2,
-          instanceDummy.position.z,
-        ),
+        tip,
+        axisDirection: downAxis.clone(),
         radius: BERLIN_CONE_GRID.CONE_RADIUS,
         height: BERLIN_CONE_GRID.CONE_HEIGHT,
+        baseCenter,
+        placementPointId: `grid:${chunkKey}:${instanceIndex}`,
+        sourceBuildingId: chunkKey,
         chunkKey,
         coneIndex: instanceIndex,
       });

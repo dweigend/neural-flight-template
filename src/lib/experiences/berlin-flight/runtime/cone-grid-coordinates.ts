@@ -1,5 +1,5 @@
 import type * as THREE from "three";
-import { BERLIN_CONE_GRID } from "../constants";
+import { BERLIN_CONE_GRID } from "./cone-grid-config";
 
 export type ConeChunkCoordinate = {
   x: number;

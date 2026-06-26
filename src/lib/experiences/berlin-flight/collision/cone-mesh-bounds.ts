@@ -30,8 +30,8 @@ export function overlapsConeCylinderBounds(
 ): boolean {
   updateTrackedMeshWorldSphere(mesh);
 
-  const deltaX = mesh.worldSphere.center.x - cone.center.x;
-  const deltaZ = mesh.worldSphere.center.z - cone.center.z;
+  const deltaX = mesh.worldSphere.center.x - cone.baseCenter.x;
+  const deltaZ = mesh.worldSphere.center.z - cone.baseCenter.z;
   const radiusSum = mesh.worldSphere.radius + cone.radius;
   const distanceSq = deltaX * deltaX + deltaZ * deltaZ;
 
@@ -41,8 +41,8 @@ export function overlapsConeCylinderBounds(
 
   const sphereMinY = mesh.worldSphere.center.y - mesh.worldSphere.radius;
   const sphereMaxY = mesh.worldSphere.center.y + mesh.worldSphere.radius;
-  const coneMinY = cone.center.y;
-  const coneMaxY = cone.center.y + cone.height;
+  const coneMinY = cone.baseCenter.y;
+  const coneMaxY = cone.tip.y;
 
   if (sphereMaxY < coneMinY) return false;
   if (sphereMinY > coneMaxY) return false;
