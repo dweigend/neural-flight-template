@@ -1,6 +1,6 @@
 import type { BerlinConeVolume } from "./types";
 import type { TrackedTileMesh } from "./tile-mesh-types";
-import { overlapsConeCylinderBounds } from "./cone-mesh-bounds";
+import { overlapsConeBounds } from "./cone-mesh-bounds";
 
 export interface ConeMeshCandidate {
   cone: BerlinConeVolume;
@@ -18,7 +18,7 @@ export function collectConeMeshCandidates(
 
   for (const cone of cones) {
     for (const mesh of meshes) {
-      if (!overlapsConeCylinderBounds(cone, mesh)) continue;
+      if (!overlapsConeBounds(cone, mesh)) continue;
 
       candidates.push({ cone, mesh });
     }
@@ -36,7 +36,7 @@ export function collectOverlappingConesForMesh(
   const overlappingCones: BerlinConeVolume[] = [];
 
   for (const cone of cones) {
-    if (!overlapsConeCylinderBounds(cone, mesh)) continue;
+    if (!overlapsConeBounds(cone, mesh)) continue;
     overlappingCones.push(cone);
   }
 

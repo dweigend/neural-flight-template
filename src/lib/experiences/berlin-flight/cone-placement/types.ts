@@ -18,6 +18,7 @@ export interface BerlinConePlacementDebugCounters {
   processedPoints: number;
   skippedMissingNeighborhood: number;
   skippedAmbiguousDirection: number;
+  activeDebugMarkerCount: number;
 }
 
 export interface BerlinConePlacementDebugSnapshot {

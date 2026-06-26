@@ -5,6 +5,7 @@ import {
   BERLIN_DEBUG_OVERLAY_WIDTH,
 } from "./config";
 import type { BerlinCollisionDebugStats } from "../collision/controller";
+import type { BerlinConePlacementDebugSnapshot } from "../cone-placement/types";
 import type { BerlinPlacementDebugSnapshot } from "../placement/types";
 import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
@@ -66,6 +67,19 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     lastUpdateDurationMs: 0,
     acceptedPoints: [],
   };
+  private conePlacementSnapshot: BerlinConePlacementDebugSnapshot = {
+    counters: {
+      acceptedPoints: 0,
+      activeCones: 0,
+      pendingPoints: 0,
+      processedPoints: 0,
+      skippedMissingNeighborhood: 0,
+      skippedAmbiguousDirection: 0,
+      activeDebugMarkerCount: 0,
+    },
+    lastUpdateDurationMs: 0,
+    activeCones: [],
+  };
 
   private disposed = false;
   private nextUpdate = 0;
@@ -111,6 +125,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     state.tilesRuntime?.writeDebugStats(this.tilesStats);
     state.collisionController.writeDebugStats(this.collisionStats);
     this.placementSnapshot = state.placementController.getSnapshot();
+    this.conePlacementSnapshot = state.conePlacementController.getSnapshot();
     if (!state.tilesRuntime) {
       this.resetTilesStats();
     }
@@ -171,6 +186,14 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
       `placement stale: ${this.placementSnapshot.counters.stalePointsRemoved}`,
       `placement ms: ${this.placementSnapshot.lastUpdateDurationMs.toFixed(2)}`,
       `placement markers: ${this.placementSnapshot.counters.activeDebugMarkerCount}`,
+      `cone points: ${this.conePlacementSnapshot.counters.acceptedPoints}`,
+      `cone active: ${this.conePlacementSnapshot.counters.activeCones}`,
+      `cone pending: ${this.conePlacementSnapshot.counters.pendingPoints}`,
+      `cone processed: ${this.conePlacementSnapshot.counters.processedPoints}`,
+      `cone skip none: ${this.conePlacementSnapshot.counters.skippedMissingNeighborhood}`,
+      `cone skip ambig: ${this.conePlacementSnapshot.counters.skippedAmbiguousDirection}`,
+      `cone ms: ${this.conePlacementSnapshot.lastUpdateDurationMs.toFixed(2)}`,
+      `cone markers: ${this.conePlacementSnapshot.counters.activeDebugMarkerCount}`,
     ];
 
     for (let index = 0; index < lines.length; index += 1) {

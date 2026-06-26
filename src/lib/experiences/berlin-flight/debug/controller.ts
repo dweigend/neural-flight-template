@@ -10,6 +10,7 @@ export function setBerlinDebugEnabled(
 
   state.debugEnabled = enabled;
   state.placementController.setDebugEnabled(state.sceneRoot, enabled);
+  state.conePlacementController.setDebugEnabled(state.sceneRoot, enabled);
 
   if (!enabled) {
     state.debugOverlay?.dispose();

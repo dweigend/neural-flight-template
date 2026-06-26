@@ -4,43 +4,22 @@ import type {
   BerlinConeVolume,
 } from "../collision/types";
 import { BERLIN_CONE_GRID } from "./cone-grid-config";
-import {
-  createConeGridChunk,
-  type ConeGridChunk,
-} from "./cone-grid-chunk";
-import {
-  type ActiveConeChunkSnapshotSource,
-  buildConeSnapshotState,
-} from "./cone-grid-snapshots";
-import {
-  collectConeChunkKeys,
-  getConeChunkCoordinate,
-  getConeGridCoordinate,
-  getConeGridKey,
-  getConeChunkKey,
-  parseConeChunkKey,
-  type ConeChunkCoordinate,
-  type ConeGridCoordinate,
-} from "./cone-grid-coordinates";
 
-type ActiveConeChunk = ActiveConeChunkSnapshotSource & ConeGridChunk;
-
-const leftDistance = new THREE.Vector2();
-const rightDistance = new THREE.Vector2();
+const localDownAxis = new THREE.Vector3(0, -1, 0);
+const scratchCenter = new THREE.Vector3();
+const scratchScale = new THREE.Vector3();
+const scratchQuaternion = new THREE.Quaternion();
+const instanceDummy = new THREE.Object3D();
 
 export class BerlinConeGridRuntime {
   public readonly root = new THREE.Group();
 
-  private readonly activeChunks = new Map<string, ActiveConeChunk>();
   private readonly coneGeometry: THREE.ConeGeometry;
   private readonly coneMaterial: THREE.MeshBasicMaterial;
+  private mesh: THREE.InstancedMesh | null = null;
   private activeConeChunksSnapshot: readonly BerlinConeChunkSnapshot[] = [];
   private activeConeVolumes: readonly BerlinConeVolume[] = [];
-  private lastObserverChunkKey: string | null = null;
-  private lastObserverGridKey: string | null = null;
-  private needsReconcile = true;
-  private needsVisibilityRefresh = true;
-  private snapshotsDirty = true;
+  private sourceVersion = -1;
   private snapshotVersion = 0;
   private disposed = false;
 
@@ -59,44 +38,41 @@ export class BerlinConeGridRuntime {
     });
   }
 
-  public update(observerPosition: THREE.Vector3): void {
+  public setActiveCones(
+    cones: readonly BerlinConeVolume[],
+    sourceVersion: number,
+  ): void {
     if (this.disposed) return;
+    if (this.sourceVersion === sourceVersion) return;
 
-    const observerChunk = getConeChunkCoordinate(observerPosition);
-    const observerChunkKey = getConeChunkKey(observerChunk);
-    const observerGrid = getConeGridCoordinate(observerPosition);
-    const observerGridKey = getConeGridKey(observerGrid);
+    this.sourceVersion = sourceVersion;
+    this.activeConeVolumes = cones.slice().sort(compareConeVolumes);
+    this.activeConeChunksSnapshot =
+      this.activeConeVolumes.length === 0
+        ? []
+        : [
+            {
+              key: "active",
+              cones: this.activeConeVolumes,
+            },
+          ];
+    this.rebuildMesh();
+    this.snapshotVersion += 1;
+  }
 
-    if (observerChunkKey !== this.lastObserverChunkKey) {
-      this.lastObserverChunkKey = observerChunkKey;
-      this.needsReconcile = true;
-    }
-
-    if (observerGridKey !== this.lastObserverGridKey) {
-      this.lastObserverGridKey = observerGridKey;
-      this.needsVisibilityRefresh = true;
-    }
-
-    if (this.needsReconcile) {
-      this.reconcile(observerChunk);
-    }
-
-    if (!this.needsVisibilityRefresh) return;
-
-    this.refreshChunkVisibility(observerGrid);
+  public update(_observerPosition: THREE.Vector3): void {
+    if (this.disposed) return;
   }
 
   public dispose(): void {
     if (this.disposed) return;
 
     this.disposed = true;
-
-    for (const chunk of this.activeChunks.values()) {
-      chunk.mesh.removeFromParent();
-    }
-    this.activeChunks.clear();
+    this.mesh?.removeFromParent();
+    this.mesh = null;
     this.activeConeChunksSnapshot = [];
     this.activeConeVolumes = [];
+    this.sourceVersion = -1;
 
     this.coneGeometry.dispose();
     this.coneMaterial.dispose();
@@ -104,12 +80,10 @@ export class BerlinConeGridRuntime {
   }
 
   public getActiveCones(): readonly BerlinConeVolume[] {
-    this.refreshSnapshots();
     return this.activeConeVolumes;
   }
 
   public getActiveConeChunks(): readonly BerlinConeChunkSnapshot[] {
-    this.refreshSnapshots();
     return this.activeConeChunksSnapshot;
   }
 
@@ -117,104 +91,61 @@ export class BerlinConeGridRuntime {
     return this.snapshotVersion;
   }
 
-  private reconcile(observerChunk: ConeChunkCoordinate): void {
-    const desiredChunkKeys = new Set<string>(
-      collectConeChunkKeys(
-        observerChunk,
-        BERLIN_CONE_GRID.LOAD_RADIUS_CHUNKS,
-      ),
-    );
-    const retainedChunkKeys = new Set<string>(
-      collectConeChunkKeys(
-        observerChunk,
-        BERLIN_CONE_GRID.UNLOAD_RADIUS_CHUNKS,
-      ),
-    );
+  private rebuildMesh(): void {
+    this.mesh?.removeFromParent();
+    this.mesh = null;
 
-    for (const [chunkKey, chunk] of this.activeChunks) {
-      if (retainedChunkKeys.has(chunkKey)) continue;
-
-      chunk.mesh.removeFromParent();
-      this.activeChunks.delete(chunkKey);
-      this.needsVisibilityRefresh = true;
-      this.snapshotsDirty = true;
-      this.snapshotVersion += 1;
+    if (this.activeConeVolumes.length === 0) {
+      return;
     }
 
-    const missingChunks = Array.from(desiredChunkKeys)
-      .filter((chunkKey) => !this.activeChunks.has(chunkKey))
-      .map((chunkKey) => parseConeChunkKey(chunkKey))
-      .sort((left, right) => {
-        leftDistance.set(left.x - observerChunk.x, left.z - observerChunk.z);
-        rightDistance.set(right.x - observerChunk.x, right.z - observerChunk.z);
-        return leftDistance.lengthSq() - rightDistance.lengthSq();
-      });
-
-    const chunkLoadCount = Math.min(
-      missingChunks.length,
-      BERLIN_CONE_GRID.MAX_CHUNK_LOADS_PER_TICK,
+    const mesh = new THREE.InstancedMesh(
+      this.coneGeometry,
+      this.coneMaterial,
+      this.activeConeVolumes.length,
     );
+    mesh.name = "BerlinConeInstances";
 
-    for (let chunkIndex = 0; chunkIndex < chunkLoadCount; chunkIndex += 1) {
-      const chunkCoordinate = missingChunks[chunkIndex];
-      const chunk = createConeGridChunk(
-        chunkCoordinate,
-        this.coneGeometry,
-        this.coneMaterial,
-      );
-      this.activeChunks.set(chunk.key, chunk);
-      this.root.add(chunk.mesh);
-      this.needsVisibilityRefresh = true;
-      this.snapshotsDirty = true;
-      this.snapshotVersion += 1;
+    for (
+      let coneIndex = 0;
+      coneIndex < this.activeConeVolumes.length;
+      coneIndex += 1
+    ) {
+      const cone = this.activeConeVolumes[coneIndex];
+      buildConeMatrix(cone, instanceDummy);
+      mesh.setMatrixAt(coneIndex, instanceDummy.matrix);
     }
 
-    this.needsReconcile = missingChunks.length > chunkLoadCount;
+    mesh.count = this.activeConeVolumes.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    this.mesh = mesh;
+    this.root.add(mesh);
   }
+}
 
-  private refreshChunkVisibility(observerGrid: ConeGridCoordinate): void {
-    for (const chunk of this.activeChunks.values()) {
-      let visibleConeCount = 0;
-      chunk.cones.length = 0;
+function buildConeMatrix(
+  cone: BerlinConeVolume,
+  target: THREE.Object3D,
+): void {
+  scratchCenter
+    .copy(cone.tip)
+    .addScaledVector(cone.axisDirection, cone.height * 0.5);
+  scratchQuaternion.setFromUnitVectors(localDownAxis, cone.axisDirection);
+  scratchScale.set(
+    cone.radius / BERLIN_CONE_GRID.CONE_RADIUS,
+    cone.height / BERLIN_CONE_GRID.CONE_HEIGHT,
+    cone.radius / BERLIN_CONE_GRID.CONE_RADIUS,
+  );
 
-      for (let coneIndex = 0; coneIndex < chunk.allCones.length; coneIndex += 1) {
-        const cone = chunk.allCones[coneIndex];
-        const coneGridX = Math.round(
-          cone.baseCenter.x / BERLIN_CONE_GRID.SPACING,
-        );
-        const coneGridZ = Math.round(
-          cone.baseCenter.z / BERLIN_CONE_GRID.SPACING,
-        );
-        const isVisible =
-          Math.abs(coneGridX - observerGrid.x) <=
-            BERLIN_CONE_GRID.VISIBLE_RADIUS_TILES &&
-          Math.abs(coneGridZ - observerGrid.z) <=
-            BERLIN_CONE_GRID.VISIBLE_RADIUS_TILES;
+  target.position.copy(scratchCenter);
+  target.quaternion.copy(scratchQuaternion);
+  target.scale.copy(scratchScale);
+  target.updateMatrix();
+}
 
-        if (!isVisible) continue;
-
-        chunk.mesh.setMatrixAt(visibleConeCount, chunk.matrices[coneIndex]);
-        chunk.cones.push(cone);
-        visibleConeCount += 1;
-      }
-
-      chunk.mesh.count = visibleConeCount;
-      chunk.mesh.instanceMatrix.needsUpdate = true;
-    }
-
-    this.needsVisibilityRefresh = false;
-    this.snapshotsDirty = true;
-    this.snapshotVersion += 1;
-  }
-
-  private refreshSnapshots(): void {
-    if (!this.snapshotsDirty) return;
-
-    const { chunkSnapshots, coneVolumes } = buildConeSnapshotState(
-      this.activeChunks.values(),
-    );
-    this.activeConeChunksSnapshot = chunkSnapshots;
-    this.activeConeVolumes = coneVolumes;
-    this.snapshotsDirty = false;
-  }
+function compareConeVolumes(
+  left: BerlinConeVolume,
+  right: BerlinConeVolume,
+): number {
+  return left.placementPointId.localeCompare(right.placementPointId);
 }

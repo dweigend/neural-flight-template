@@ -116,7 +116,6 @@ export function tick(state: BerlinState, ctx: TickContext) {
   s.player.setXRPresenting(s.renderer.xr.isPresenting);
   s.player.tick(ctx.delta);
   s.player.rig.updateMatrixWorld(true);
-  s.coneRuntime.update(s.player.rig.position);
 
   if (s.tilesRuntime) {
     // Sync the WebXR session with the 3D Tiles scheduler so that requestAnimationFrame callbacks
@@ -126,12 +125,6 @@ export function tick(state: BerlinState, ctx: TickContext) {
 
     syncTileSelectionCamera(s);
     s.tilesRuntime.update(getTileSelectionCameras(s), s.renderer);
-    s.collisionController.update(
-      s.coneRuntime.getActiveCones(),
-      s.coneRuntime.getSnapshotVersion(),
-      s.tilesRuntime.getTrackedTileMeshes(),
-      s.tilesRuntime.getTrackedTileMeshVersion(),
-    );
     s.placementController.update(
       s.player.rig.position,
       s.tilesRuntime.getTrackedTileMeshes(),
@@ -142,7 +135,19 @@ export function tick(state: BerlinState, ctx: TickContext) {
       s.tilesRuntime.getTrackedTileMeshes(),
       s.tilesRuntime.getTrackedTileMeshVersion(),
     );
+    s.coneRuntime.setActiveCones(
+      s.conePlacementController.getActiveCones(),
+      s.conePlacementController.getSnapshotVersion(),
+    );
+    s.collisionController.update(
+      s.coneRuntime.getActiveCones(),
+      s.coneRuntime.getSnapshotVersion(),
+      s.tilesRuntime.getTrackedTileMeshes(),
+      s.tilesRuntime.getTrackedTileMeshVersion(),
+    );
   }
+
+  s.coneRuntime.update(s.player.rig.position);
 
   if (s.debugEnabled) {
     s.debugOverlay?.update(s, ctx.elapsed);

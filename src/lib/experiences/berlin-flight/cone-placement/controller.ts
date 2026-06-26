@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { BERLIN_CONE_PLACEMENT } from "./config";
+import { BerlinConePlacementDebugMarkers } from "./debug-markers";
 import { sampleBerlinMeshNeighborhood } from "./mesh-neighborhood";
 import { solveBerlinConeAxisDirection } from "./orientation-solver";
 import type {
@@ -25,6 +26,7 @@ export class BerlinConePlacementController {
   private trackedMeshVersion = -1;
   private snapshotVersion = 0;
   private lastUpdateDurationMs = 0;
+  private debugMarkers: BerlinConePlacementDebugMarkers | null = null;
   private lastCounters: BerlinConePlacementDebugCounters = {
     acceptedPoints: 0,
     activeCones: 0,
@@ -32,6 +34,7 @@ export class BerlinConePlacementController {
     processedPoints: 0,
     skippedMissingNeighborhood: 0,
     skippedAmbiguousDirection: 0,
+    activeDebugMarkerCount: 0,
   };
 
   public update(
@@ -108,6 +111,10 @@ export class BerlinConePlacementController {
       this.snapshotVersion += 1;
     }
 
+    const activeDebugMarkerCount = this.debugMarkers
+      ? this.debugMarkers.update(this.activeCones)
+      : 0;
+
     this.lastCounters = {
       acceptedPoints: acceptedPoints.length,
       activeCones: this.activeCones.length,
@@ -115,8 +122,32 @@ export class BerlinConePlacementController {
       processedPoints,
       skippedMissingNeighborhood,
       skippedAmbiguousDirection,
+      activeDebugMarkerCount,
     };
     this.lastUpdateDurationMs = performance.now() - startedAt;
+  }
+
+  public setDebugEnabled(parent: THREE.Object3D, enabled: boolean): void {
+    if (!enabled) {
+      this.debugMarkers?.dispose();
+      this.debugMarkers = null;
+      this.lastCounters = {
+        ...this.lastCounters,
+        activeDebugMarkerCount: 0,
+      };
+      return;
+    }
+
+    if (this.debugMarkers) {
+      return;
+    }
+
+    this.debugMarkers = new BerlinConePlacementDebugMarkers();
+    this.debugMarkers.attach(parent);
+    this.lastCounters = {
+      ...this.lastCounters,
+      activeDebugMarkerCount: this.debugMarkers.update(this.activeCones),
+    };
   }
 
   public getActiveCones(): readonly BerlinConeVolume[] {
@@ -144,6 +175,8 @@ export class BerlinConePlacementController {
     this.trackedMeshVersion = -1;
     this.snapshotVersion = 0;
     this.lastUpdateDurationMs = 0;
+    this.debugMarkers?.dispose();
+    this.debugMarkers = null;
     this.lastCounters = {
       acceptedPoints: 0,
       activeCones: 0,
@@ -151,6 +184,7 @@ export class BerlinConePlacementController {
       processedPoints: 0,
       skippedMissingNeighborhood: 0,
       skippedAmbiguousDirection: 0,
+      activeDebugMarkerCount: 0,
     };
   }
 

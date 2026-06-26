@@ -66,5 +66,36 @@ test("sampleBerlinMeshNeighborhood skips the roof point itself and keeps the nea
   expect(neighborhood.contributingMeshCount).toBe(1);
   expect(neighborhood.nearestWorldPoint.toArray()).toEqual([4, 20, 0]);
   expect(neighborhood.directionToGeometry.toArray()).toEqual([4, 0, 0]);
-  expect(neighborhood.horizontalDirectionToGeometry.toArray()).toEqual([4, 0, 0]);
+  expect(neighborhood.horizontalDirectionToGeometry.toArray()).toEqual([3, 0, 0]);
+});
+
+test("sampleBerlinMeshNeighborhood stabilizes direction from the nearest horizontal samples", () => {
+  const point = {
+    pointId: "point-a",
+    buildingId: "building-a",
+    sourceKey: "tile://test:mesh-0",
+    cornerIndex: 0,
+    elevation: 20,
+    worldPosition: new THREE.Vector3(0, 20, 0),
+  };
+  const trackedMesh = createTrackedMesh([
+    4,
+    20,
+    0,
+    5,
+    20,
+    1,
+    6,
+    20,
+    -1,
+    -20,
+    20,
+    0,
+  ]);
+
+  const neighborhood = sampleBerlinMeshNeighborhood(point, [trackedMesh]);
+
+  expect(neighborhood).not.toBeNull();
+  expect(neighborhood.horizontalDirectionToGeometry.x).toBeGreaterThan(0);
+  expect(Math.abs(neighborhood.horizontalDirectionToGeometry.z)).toBeLessThan(0.05);
 });
