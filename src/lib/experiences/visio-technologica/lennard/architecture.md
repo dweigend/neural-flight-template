@@ -57,7 +57,51 @@ Svelte / SvelteKit imports, so it can be dropped into any route.
 Naming note: the folder is `straßen` (German for "roads") — `ß` is a valid
 filename character on Windows. Keep the import path as written.
 
-### 2.2 `lennard/scripts/` — Tooling
+### 2.2 `lennard/scripts/` — Overlays & Tooling
+
+#### Battery Overlay
+
+`battery-overlay.ts` — A canvas-drawn battery icon HUD rendered as a
+camera-aligned `THREE.Sprite`, following the same rendering pipeline as
+`CyberOverlay`. Displays remaining experience time as 4 battery bars.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `totalTimeMs` | 300000 | Total countdown duration |
+| `outlineColor` | `"#00ffcc"` | Battery outline stroke colour |
+| `barColor` | `"#00ffcc"` | Fill colour of each bar |
+| `flickerColor` | `"#ff0044"` | Last-bar flicker colour at 95%+ |
+| `flickerSpeedMs` | 400 | Full on/off flicker cycle |
+
+**Behaviour:**
+- Bars (4→0) disappear at 25 %, 50 %, 75 % of total time elapsed.
+- At 95 % elapsed the remaining bar starts flickering (`flickerColor`).
+- Battery outline is a stroked rectangle + terminal tab (no fill).
+- Bars are filled rectangles, spaced apart, not touching the outline.
+
+**Data flow:**
+
+```
+BatteryOverlay.start()        ← begin countdown (stores performance.now())
+       │
+       ▼
+BatteryOverlay.update(now)    ← called every frame
+       │
+       ▼
+  _computeBars(fraction)      → bars (4,3,2,1,0)
+  flicker state (95%+ & last bar)
+       │
+       ▼
+  _draw(bars, flickerOn)      → Canvas → CanvasTexture → SpriteMaterial
+```
+
+#### Cyber Overlay
+
+`cyber-overlay.ts` — Full text-grid overlay system with canvas-to-sprite
+rendering, translation dictionary, responsive layout, and glow effects.
+Configured via the `CYBER` settings object.
+
+#### Tooling
 
 - `git-hourly-push.ps1` — PowerShell snippet referenced by the
   Windows Scheduled Task `NeuralFlight-GitPush-ll` defined in
