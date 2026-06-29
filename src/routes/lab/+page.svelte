@@ -12,6 +12,12 @@ const experiments: { name: string; path: string; description: string }[] = [
 		description:
 			"Organic neon blobs over dark reflective water with bloom glow",
 	},
+	{
+		name: "Sonar Overlay",
+		path: "sonar",
+		description:
+			"Opening sequence sonar sweep overlay with rotating scan line, pinging dots, and trailing glow",
+	},
 ];
 </script>
 
