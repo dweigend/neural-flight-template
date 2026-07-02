@@ -1,4 +1,4 @@
-import { BERLIN_COLLISION } from "../constants";
+import { BERLIN_COLLISION } from "./config";
 import { collectOverlappingConesForMesh } from "./cone-query";
 import type { BerlinConeVolume } from "./types";
 import type { TrackedTileMesh } from "./tile-mesh-types";

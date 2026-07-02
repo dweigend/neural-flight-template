@@ -20,10 +20,6 @@ export const BERLIN_ALTITUDE_SPEED = {
   MAX_MULTIPLIER: 3,
 } as const;
 
-export const BERLIN_COLLISION = {
-  MAX_MESHES_PER_TICK: 8,
-} as const;
-
 export const BERLIN_TILE_PRELOAD = {
   FOV: 130,
   AHEAD_DISTANCE: 420,
