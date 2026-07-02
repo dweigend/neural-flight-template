@@ -1,0 +1,52 @@
+import {
+  PUBLIC_CESIUM_ION_TOKEN,
+  PUBLIC_BERLIN_ION_ASSET_ID,
+  PUBLIC_BERLIN_TILES_URL,
+} from "$env/static/public";
+
+/**
+ * Berlin Flight Experience Constants
+ */
+export const BERLIN_CESIUM_ION_TOKEN = PUBLIC_CESIUM_ION_TOKEN;
+export const BERLIN_ION_ASSET_ID = Number(PUBLIC_BERLIN_ION_ASSET_ID);
+export const BERLIN_TILES_URL = PUBLIC_BERLIN_TILES_URL;
+
+export const BERLIN_FLIGHT_BASE_SPEED = 20;
+
+export const BERLIN_ALTITUDE_SPEED = {
+  MIN_ALTITUDE: 35,
+  MAX_ALTITUDE: 450,
+  MIN_MULTIPLIER: 0.45,
+  MAX_MULTIPLIER: 3,
+} as const;
+
+export const BERLIN_COLLISION = {
+  MAX_MESHES_PER_TICK: 8,
+} as const;
+
+export const BERLIN_TILE_PRELOAD = {
+  FOV: 130,
+  AHEAD_DISTANCE: 420,
+} as const;
+
+export const BERLIN_TILE_RUNTIME = {
+  DOWNLOAD_JOBS: 8,
+  PARSE_JOBS: 2,
+  PROCESS_NODE_JOBS: 8,
+  MAX_TILES_PROCESSED: 48,
+} as const;
+
+export const BERLIN_TILE_LOOK = {
+  NEUTRAL_COLOR: 0xbeeeef,
+  ROUGHNESS: 0.7,
+  METALNESS: 0,
+  OPACITY: 0.8,
+  NEUTRAL_SHADE_AMBIENT: 0.42,
+  NEUTRAL_SHADE_HEMISPHERE: 0.28,
+  NEUTRAL_SHADE_DIRECTIONAL: 0.45,
+  NEUTRAL_SHADE_LIGHT_DIRECTION: {
+    x: -0.55,
+    y: 0.8,
+    z: -0.25,
+  },
+} as const;

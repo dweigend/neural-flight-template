@@ -127,6 +127,14 @@ export interface RuntimeValues {
 	[parameterId: string]: number | boolean | string;
 }
 
+export interface PlayerOrientationInput {
+	pitch: number;
+	roll: number;
+	yaw?: number;
+	rawPitch?: number;
+	rawRoll?: number;
+}
+
 // ── Lifecycle Contexts ──
 
 export interface SetupContext {
@@ -197,7 +205,7 @@ export interface ExperienceManifest {
 
 	/** Called when orientation data arrives. Update player physics. */
 	updatePlayer: (
-		orientation: { pitch: number; roll: number },
+		orientation: PlayerOrientationInput,
 		speed: { accelerate: boolean; brake: boolean },
 		state: ExperienceState,
 		delta: number,

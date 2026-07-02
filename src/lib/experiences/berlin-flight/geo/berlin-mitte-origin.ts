@@ -1,0 +1,13 @@
+import type { GeoPoint } from "./types";
+
+/**
+ * The reference origin for Berlin Mitte.
+ * All local world-space coordinates (0,0,0) are relative to this point.
+ *
+ * Location: Alexanderplatz / Fernsehturm area
+ */
+export const BERLIN_MITTE_ORIGIN: GeoPoint = {
+	lat: 52.5200,
+	lon: 13.4050,
+	height: 0,
+};

@@ -13,6 +13,11 @@ export function updatePlayer(
     Number.isFinite(orientation.pitch) && Number.isFinite(orientation.roll);
   const keyboardInputActive = hasKeyboardCameraInput(s.keyboardControls);
 
+  if (!keyboardInputActive && hasExternalOrientation && s.keyboardControlsActive) {
+    s.flightPitch = s.camera.rotation.x;
+    s.flightYaw = s.camera.rotation.y;
+  }
+
   s.keyboardControlsActive = keyboardInputActive || !hasExternalOrientation;
   if (!hasExternalOrientation) {
     s.steeringPitch = 0;
@@ -20,6 +25,6 @@ export function updatePlayer(
     return;
   }
 
-  s.steeringPitch = Math.max(-1, Math.min(1, orientation.pitch));
-  s.steeringRoll = Math.max(-1, Math.min(1, orientation.roll));
+  s.steeringPitch = orientation.pitch;
+  s.steeringRoll = orientation.roll;
 }
