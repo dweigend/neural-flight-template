@@ -4,6 +4,7 @@ import type { SetupContext, TickContext } from "../types";
 import type { BerlinState } from "./types";
 import { setBerlinDebugEnabled } from "./debug/controller";
 import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
+import { preloadBerlinCameraDensitySampler } from "./heatmaps/camera-density-loader";
 import {
   BERLIN_ALTITUDE_SPEED,
   BERLIN_FLIGHT_BASE_SPEED,
@@ -44,6 +45,8 @@ function createBerlinFillLights(): {
  * Initializes the Berlin scene
  */
 export async function setup(ctx: SetupContext): Promise<BerlinState> {
+  await preloadBerlinCameraDensitySampler();
+
   const sceneRoot = new THREE.Group();
   sceneRoot.name = "BerlinFlightRoot";
   ctx.scene.add(sceneRoot);

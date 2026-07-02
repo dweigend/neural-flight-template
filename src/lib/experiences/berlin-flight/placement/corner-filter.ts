@@ -1,3 +1,7 @@
+import * as THREE from "three";
+import { BERLIN_MITTE_ORIGIN } from "../geo/berlin-mitte-origin";
+import { localToGeo } from "../geo/coordinates";
+import { getBerlinCameraDensitySampler } from "../heatmaps/camera-density-loader";
 import { BERLIN_PLACEMENT } from "./config";
 import type {
   BerlinAcceptedShadowOriginPoint,
@@ -9,21 +13,60 @@ export interface BerlinCornerFilterResult {
   rejectedBySpacing: number;
 }
 
+const scratchRepresentativePosition = new THREE.Vector3();
+
 /**
  * Candidate-stage seam for future heatmap density integration.
- *
- * Currently a pass-through — returns candidates unchanged.
- * Phase 3 of the heatmap plan will sample the heatmap here and
- * trim per-building candidate lists based on density before the
- * global spacing filter runs.
  *
  * @see heatmap-cone-density-plan.md Phase 3
  */
 export function applyBerlinCornerCandidateStage(
   candidates: readonly BerlinRoofCornerCandidate[],
 ): readonly BerlinRoofCornerCandidate[] {
-  // Phase 3: heatmap density scoring plugs in here.
-  return candidates;
+  if (candidates.length <= 1) {
+    return candidates;
+  }
+
+  const sampler = getBerlinCameraDensitySampler();
+  if (!sampler) {
+    return candidates;
+  }
+
+  const candidatesByBuilding = new Map<string, BerlinRoofCornerCandidate[]>();
+
+  for (const candidate of candidates) {
+    const buildingCandidates = candidatesByBuilding.get(candidate.buildingId);
+    if (buildingCandidates) {
+      buildingCandidates.push(candidate);
+      continue;
+    }
+
+    candidatesByBuilding.set(candidate.buildingId, [candidate]);
+  }
+
+  const trimmedCandidates: BerlinRoofCornerCandidate[] = [];
+
+  for (const buildingCandidates of candidatesByBuilding.values()) {
+    const allowedCandidateCount = getAllowedCandidateCount(
+      sampleBuildingDensity(sampler, buildingCandidates),
+    );
+    if (allowedCandidateCount === 0) {
+      continue;
+    }
+
+    if (buildingCandidates.length <= allowedCandidateCount) {
+      trimmedCandidates.push(...buildingCandidates);
+      continue;
+    }
+
+    trimmedCandidates.push(
+      ...[...buildingCandidates]
+        .sort(compareRoofCornerCandidates)
+        .slice(0, allowedCandidateCount),
+    );
+  }
+
+  return trimmedCandidates;
 }
 
 export function filterBerlinRoofCornerCandidates(
@@ -117,6 +160,47 @@ function compareRoofCornerCandidates(
   }
 
   return left.sourceKey.localeCompare(right.sourceKey);
+}
+
+function sampleBuildingDensity(
+  sampler: {
+    sampleDensity(lat: number, lon: number): number;
+  },
+  candidates: readonly BerlinRoofCornerCandidate[],
+): number {
+  getRepresentativePosition(candidates, scratchRepresentativePosition);
+  const representativeGeoPoint = localToGeo(BERLIN_MITTE_ORIGIN, {
+    x: scratchRepresentativePosition.x,
+    y: scratchRepresentativePosition.y,
+    z: scratchRepresentativePosition.z,
+  });
+
+  return sampler.sampleDensity(representativeGeoPoint.lat, representativeGeoPoint.lon);
+}
+
+function getRepresentativePosition(
+  candidates: readonly BerlinRoofCornerCandidate[],
+  target: THREE.Vector3,
+): THREE.Vector3 {
+  target.set(0, 0, 0);
+
+  for (const candidate of candidates) {
+    target.add(candidate.worldPosition);
+  }
+
+  return target.multiplyScalar(1 / candidates.length);
+}
+
+export function getAllowedCandidateCount(density: number): number {
+  if (density < 0.34) {
+    return 0;
+  }
+
+  if (density < 0.67) {
+    return 1;
+  }
+
+  return BERLIN_PLACEMENT.MAX_CORNERS_PER_BUILDING;
 }
 
 function createShadowOriginPointId(
