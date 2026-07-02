@@ -22,6 +22,10 @@ export function handleConnection(ws: WebSocket): void {
 		}
 	});
 
+	ws.on("error", (err) => {
+		console.warn("[ws] Client error:", err.message);
+	});
+
 	ws.on("close", () => {
 		clients.delete(ws);
 	});

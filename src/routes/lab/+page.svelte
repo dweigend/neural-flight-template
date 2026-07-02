@@ -1,4 +1,24 @@
 <script lang="ts">
+const experiments: { name: string; path: string; description: string }[] = [
+	{
+		name: "Gradient Prism",
+		path: "gradient-prism",
+		description:
+			"Monolith field with gradient shaders, bloom, starfield, and film grain",
+	},
+	{
+		name: "Neon Metaball",
+		path: "neon-metaball",
+		description:
+			"Organic neon blobs over dark reflective water with bloom glow",
+	},
+	{
+		name: "Sonar Overlay",
+		path: "sonar",
+		description:
+			"Opening sequence sonar sweep overlay with rotating scan line, pinging dots, and trailing glow",
+	},
+];
     const experiments: { name: string; href: string; description: string }[] = [
         {
             name: "Gradient Prism",
