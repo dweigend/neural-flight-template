@@ -110,3 +110,35 @@ test("BerlinConeChunkRuntimeStore surfaces chunk load failures", async () => {
   );
   expect(store.getLastError()?.message).toContain("broken chunk");
 });
+
+test("BerlinConeChunkRuntimeStore respects the per-tick chunk load budget", async () => {
+  let loadCount = 0;
+  const store = new BerlinConeChunkRuntimeStore({
+    async loadManifest() {
+      return {
+        version: 1,
+        origin: { x: 0, z: 0 },
+        chunkSizeMeters: 1920,
+        bounds: {
+          minChunkX: -1,
+          maxChunkX: 1,
+          minChunkZ: -1,
+          maxChunkZ: 1,
+        },
+        chunkCount: 9,
+      };
+    },
+    async loadChunk(chunkKey) {
+      loadCount += 1;
+      return {
+        key: chunkKey,
+        cones: [],
+      };
+    },
+  });
+
+  await store.update(new THREE.Vector3(0, 0, 0));
+
+  expect(loadCount).toBe(3);
+  expect(store.getLoadedChunkCount()).toBe(3);
+});

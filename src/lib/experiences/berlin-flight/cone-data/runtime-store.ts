@@ -82,13 +82,20 @@ export class BerlinConeChunkRuntimeStore {
   }
 
   private async loadMissingChunks(desiredChunkKeys: readonly string[]): Promise<void> {
+    let loadsStarted = 0;
+
     for (const chunkKey of desiredChunkKeys) {
       if (this.loadedChunks.has(chunkKey)) {
         continue;
       }
 
+      if (loadsStarted >= BERLIN_CONE_GRID.MAX_CHUNK_LOADS_PER_TICK) {
+        return;
+      }
+
       const snapshot = await this.assetLoader.loadChunk(chunkKey);
       this.loadedChunks.set(chunkKey, snapshot);
+      loadsStarted += 1;
     }
   }
 
