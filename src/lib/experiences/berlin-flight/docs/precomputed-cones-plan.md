@@ -1,341 +1,573 @@
 # Precomputed Cones — Plan
 
-## Objective
+## Goal
 
-Eliminate all runtime cone recomputation so that cones never pop in/out and never introduce frame-time jitter. Compute each cone's position **exactly once** (when its tile first loads), cache the result to disk, and serve it from cache on all subsequent visits.
+Remove cone generation from runtime.
 
----
+Berlin cone positions and orientations should be computed once for the whole Berlin dataset, saved as a reusable artifact, and loaded at runtime by world position as the player moves.
+
+Success criteria:
+
+- no roof-corner extraction during flight
+- no neighborhood sampling during flight
+- no cone orientation solving during flight
+- no cone pop-in caused by recomputation after tile reload
+- cone data loads deterministically from precomputed world chunks
+- Quest frame time improves because runtime only streams cone data and updates rendering/collision
+
+## Confirmed direction
+
+- precompute scope: whole Berlin dataset, not “first visit” cache
+- runtime key: stable world-space chunk coordinates, not `tileUrl`
+- persistence model: shipped or generated artifact, not browser-local IndexedDB as the primary source
+- runtime behavior: load nearby cone chunks by player position
+- existing live cone-generation path: removable after validation
 
 ## Core insight
 
 Current problem chain:
 
-```
-Tile loads → compute corners (budgeted over frames) → compute cones (budgeted over frames)
-Tile unloads → DELETE cones (POP!)
-Tile reloads → recompute corners + cones (delayed reappearance)
-```
+```text
+Tile loads
+  -> find nearby building meshes
+  -> extract roof corners over time
+  -> sample surrounding geometry over time
+  -> solve cone orientation over time
+  -> rebuild active cone set
 
-The fix:
+Tile unloads
+  -> derived cone state disappears with runtime state
 
-```
-Tile loads:
-  → check persistent cache
-  → HIT:  load cached cones instantly, skip all computation
-  → MISS: extract corners + compute cones eagerly, store in cache
-  → done, forever
-
-Tile unloads:
-  → cones stay in cache, InstancedMesh keeps them visible
-
-Tile reloads:
-  → cache hit, cones load instantly, no computation
+Tile reloads
+  -> repeat the same work
 ```
 
----
+Target model:
+
+```text
+Offline build step
+  -> scan Berlin source data once
+  -> extract accepted cone volumes once
+  -> write cone chunks keyed by world region
+
+Runtime
+  -> player moves
+  -> load nearby cone chunks by world position
+  -> feed active cones to rendering and collision
+  -> unload far cone chunks from memory
+```
+
+The expensive part moves out of the headset runtime and into an offline asset-generation step.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│                  IndexedDB                       │
-│  Map<tileUrlHash, CachedConeData[]>              │
-└──────────────────┬──────────────────────────────┘
-                   │ load / save
-        ┌──────────▼──────────┐
-        │   BerlinConeCache    │  ← in-memory + persistence
-        │   Map<string,        │
-        │     BerlinConeVolume[]>│
-        └──────────┬──────────┘
-                   │ query by player position
-        ┌──────────▼──────────────┐
-        │   BerlinConeGridRuntime  │ → InstancedMesh
-        └─────────────────────────┘
-                   │ sends active cones
-        ┌──────────▼──────────────┐
-        │   BerlinCollisionController │ → coneMask shader attribute
-        └─────────────────────────┘
+```text
+Offline generator
+  -> Berlin tiles / source meshes
+  -> roof-corner extraction
+  -> placement filtering
+  -> mesh-neighborhood sampling
+  -> cone orientation solving
+  -> world-chunked cone dataset
+
+world-chunked cone dataset
+  -> cone chunk index / manifest
+  -> chunk files keyed by local Berlin coordinates
+
+runtime chunk store
+  -> loads chunk files near player
+  -> caches loaded chunks in memory
+
+BerlinConeGridRuntime
+  -> queries loaded cones
+  -> updates InstancedMesh
+
+BerlinCollisionController
+  -> consumes active cones
+  -> updates cone mask for tracked meshes
 ```
 
-### Data flow on first flight (cache miss)
+## Data model
 
-```
-load-model event fires for tile
-  ↓
-Mesh data available in memory
-  ↓
-BerlinConeCache.get(tileUrl) → miss
-  ↓
-extractBerlinRoofCornerCandidates(mesh)      ← runs NOW, no budget limit
-  ↓
-sampleBerlinMeshNeighborhood(...)            ← runs NOW, samples only already-loaded neighbors
-  ↓
-solveBerlinConeAxisDirection(...)            ← runs NOW
-  ↓
-CachedConeData[]  ──►  IndexedDB            ← persisted for next run
-  ↓
-BerlinConeGridRuntime.setActiveCones(...)    ← visible immediately
+Use stable world chunks in Berlin local space.
+
+Recommended chunk key:
+
+```typescript
+type BerlinConeChunkKey = `${number}:${number}`;
 ```
 
-### Data flow on all subsequent flights (cache hit)
+Where each number is a chunk coordinate derived from local Berlin world space:
 
-```
-load-model event fires for tile
-  ↓
-BerlinConeCache.get(tileUrl) → hit
-  ↓
-CachedConeData[] reconstructed to BerlinConeVolume[]
-  ↓
-BerlinConeGridRuntime.setActiveCones(...)    ← visible immediately
-  ↓
-(nothing more for this tile, ever)
-```
+- `chunkX = floor(worldX / chunkSizeMeters)`
+- `chunkZ = floor(worldZ / chunkSizeMeters)`
 
----
+Recommended first-pass chunk size:
+
+- `240m` or `480m`
+
+The exact value should match the existing Berlin spatial scale and be large enough to keep file count reasonable.
 
 ## Serialization format
 
-`BerlinConeVolume` reconstructed from flat arrays — no THREE.Vector3 objects in storage.
+Keep the runtime payload flat and boring.
 
 ```typescript
-interface CachedConeData {
-  // Flat array: [tipX, tipY, tipZ, axisX, axisY, axisZ, baseX, baseY, baseZ, ...]
-  positions: Float64Array;    // 9 floats per cone
-  scalars: Float64Array;      // [radius, height] per cone
-  strings: string[];          // [placementPointId, sourceBuildingId, chunkKey, ...] per cone
-  coneIndex: Int32Array;      // coneIndex per cone
+export interface BerlinConeChunkData {
+  chunkKey: string;
+  chunkWorldMinX: number;
+  chunkWorldMinZ: number;
+  chunkSizeMeters: number;
+  positions: Float32Array; // [tipX, tipY, tipZ, axisX, axisY, axisZ, ...]
+  scalars: Float32Array; // [radius, height, radius, height, ...]
+  coneIndex: Int32Array;
 }
 ```
 
-~20 bytes per position float + ~16 bytes per scalar + ~80 bytes per string ≈ ~200 bytes per cone. For ~10,000 cones (a full Berlin session): ~2 MB. Trivial for IndexedDB.
+Notes:
 
----
+- do not store `THREE.Vector3` in the asset
+- do not key runtime data by tile URL
+- strings like `placementPointId` and `sourceBuildingId` should only stay if runtime or debugging actually needs them
+- prefer `Float32Array` unless there is a demonstrated precision problem in Berlin local space
 
-## New files
+## Runtime contract
 
-### `src/lib/experiences/berlin-flight/cone-cache/storage.ts`
+At runtime, the cone system should answer one question:
 
-IndexedDB persistence layer.
-
-- `openConeDatabase(): Promise<IDBDatabase>` — opens/creates `BerlinConeCache` db
-- `saveTileConeData(tileUrl: string, cones: CachedConeData): Promise<void>`
-- `loadTileConeData(tileUrl: string): Promise<CachedConeData | null>`
-- `deleteTileConeData(tileUrl: string): Promise<void>`
-- `getCachedTileCount(): Promise<number>`
-- `clearAllConeData(): Promise<void>`
-
-**Store schema:**
-- Database: `BerlinConeCache` (version 1)
-- Object store: `tileCones`
-- Key: `tileUrl` (string)
-- Value: `CachedConeData` (serialized as a structured-clonable object)
-
-IndexedDB's structured clone algorithm handles `Float64Array` and `Int32Array` natively, so no manual JSON serialization is needed.
-
-### `src/lib/experiences/berlin-flight/cone-cache/cache.ts`
-
-In-memory cache with IndexedDB backing.
-
-```typescript
-export class BerlinConeCache {
-  private readonly cache = new Map<string, BerlinConeVolume[]>();
-  private readonly tileUrlsForLoadedMeshes = new Set<string>();
-  private readonly db: IDBDatabase | null = null;
-  private dbReady: Promise<void>;
-  private lastPrunePosition: THREE.Vector3 | null = null;
-
-  constructor(tileUrlRoot: string);
-
-  /**
-   * Called on load-model. Returns cached cones or null.
-   */
-  async getOrCompute(
-    tileUrl: string,
-    mesh: THREE.Mesh,
-    meshes: readonly TrackedTileMesh[],
-  ): Promise<BerlinConeVolume[]>;
-
-  /**
-   * Called on dispose-model. Does NOT remove from cache.
-   * Only records that the mesh is no longer loaded.
-   */
-  onTileUnload(tileUrl: string): void;
-
-  /**
-   * Prunes cache entries for tiles far from player to bound memory.
-   */
-  pruneToRadius(playerPosition: THREE.Vector3, radiusMeters: number): void;
-
-  /**
-   * Returns all cones within a radius of the player position.
-   */
-  query(playerPosition: THREE.Vector3, radiusMeters: number): BerlinConeVolume[];
-
-  dispose(): void;
-}
+```text
+Given player position P, which precomputed cone chunks should be loaded now?
 ```
 
-**Prune policy:** Remove cached cone data for tiles whose bounding sphere center is > 3,000m from the player. This prevents unbounded growth while keeping cones stable during normal flight.
+That means the runtime cone path becomes:
 
----
-
-## Modified files
-
-### `scene.ts` — Simplified tick path
-
-**Before:**
-```
+```text
 tick()
-  → tilesRuntime.update()
-  → placementController.update()         ← heavy, depends on mesh version
-  → conePlacementController.update()     ← heavy, depends on placement
-  → coneRuntime.setActiveCones()         ← triggers mesh rebuild
-  → collisionController.update()         ← mask write
+  -> tilesRuntime.update()
+  -> coneChunkRuntime.update(playerPosition)
+      -> compute required chunk keys
+      -> load missing chunk data
+      -> unload far chunk data from memory
+  -> coneRuntime.update(playerPosition)
+      -> query active cones from loaded chunks
+      -> update InstancedMesh incrementally
+  -> collisionController.update()
 ```
 
-**After:**
-```
-tick()
-  → tilesRuntime.update()                ← tile streaming, unchanged
-  → coneRuntime.update(playerPosition)   
-      → coneCache.query(playerPosition, VISIBLE_RADIUS)
-      → rebuild InstancedMesh from cached cones
-      → passes active cones to collision
-  → collisionController.update()         ← mask write, unchanged
-```
+What disappears from runtime:
 
-The entire `PlacementController → ConePlacementController` chain is removed from `tick()`. Cones come from cache.
+- `BerlinPlacementController.update(...)`
+- `BerlinConePlacementController.update(...)`
+- runtime calls to:
+  - `extractBerlinRoofCornerCandidates(...)`
+  - `sampleBerlinMeshNeighborhood(...)`
+  - `solveBerlinConeAxisDirection(...)`
 
-The `tilesRuntime` no longer needs to expose `getTrackedTileMeshVersion()` for cone purposes (collision still needs it).
+## Existing integration points
 
-**Computation hook** — added to the `load-model` event path:
-```
-handleLoadModel(event) 
-  → meshRegistry.trackTileScene(...)     ← unchanged
-  → coneCache.getOrCompute(tileUrl, mesh, trackedMeshes)
-```
+The current code already defines the logic that should move offline:
 
-### `cone-placement/controller.ts` — Simplified or removed
+- roof-corner extraction in [placement/corner-extractor.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/placement/corner-extractor.ts)
+- accepted-point filtering in [placement/corner-registry.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/placement/corner-registry.ts)
+- neighborhood sampling in [cone-placement/mesh-neighborhood.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/cone-placement/mesh-neighborhood.ts)
+- orientation solving in [cone-placement/orientation-solver.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/cone-placement/orientation-solver.ts)
+- cone rendering in [runtime/cone-grid-runtime.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/runtime/cone-grid-runtime.ts)
+- cone-driven collision in [collision/controller.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/collision/controller.ts)
 
-If cones are entirely cache-driven, the per-frame `ConePlacementController` becomes unnecessary. The corridor logic that decides which accepted points get cones can either:
+The plan should reuse these rules. It should not invent a second cone algorithm.
 
-**Option A:** Keep a lightweight version that merely feeds cone data from cache to the runtime (thin adapter, ~50 lines).
+## Asset layout
 
-**Option B:** Remove entirely — `BerlinConeGridRuntime` queries the cache directly.
+Keep the artifact local to `berlin-flight`.
 
-Recommended: **Option A** — keep the file but strip it to a cache query adapter that filters cones by visibility radius and feeds them to the grid runtime. This keeps the architectural boundary clean.
+Recommended layout:
 
-### `runtime/cone-grid-runtime.ts` — Cache-driven, incremental
+- `src/lib/experiences/berlin-flight/cone-data/manifest.json`
+- `src/lib/experiences/berlin-flight/cone-data/chunks/`
+- `scripts/berlin-flight/build-cone-dataset.ts`
 
-**Change:** Query the persistent cache by player position instead of receiving a pre-computed cone set.
+If the final Berlin payload is too large for `src/`, move the generated chunk files to the same offline asset location used by the offline tiles workflow. The contract stays the same.
+
+## Manifest contract
+
+The runtime needs one small manifest that describes the dataset.
 
 ```typescript
-export class BerlinConeGridRuntime {
-  // ...
-  private coneCache: BerlinConeCache;
-
-  public update(playerPosition: THREE.Vector3): void {
-    const cones = this.coneCache.query(
-      playerPosition,
-      BERLIN_CONE_GRID.VISIBLE_RADIUS_TILES,
-    );
-    this.setActiveCones(cones, ++this.cacheVersion);
-  }
-
-  // rebuildMesh becomes incremental:
-  // if cone count grew → add new instances
-  // if cone count shrunk → only if player moved > 500m
-  private rebuildMesh(): void { /* ... */ }
+export interface BerlinConeDatasetManifest {
+  version: number;
+  origin: {
+    x: number;
+    z: number;
+  };
+  chunkSizeMeters: number;
+  bounds: {
+    minChunkX: number;
+    maxChunkX: number;
+    minChunkZ: number;
+    maxChunkZ: number;
+  };
+  chunkCount: number;
 }
 ```
 
-The aggressive rebuild on every change is softened: the cache is additive (tiles load, cones appear) and near-prunes only when the player moves very far.
+The runtime should not scan directories or guess file names.
 
-### `runtime/tiles-runtime.ts` — Wire up cache hook
+## Phase 1 - Lock the offline cone dataset contract
 
-Add a reference to `BerlinConeCache` so that `handleLoadModel` can trigger eager computation.
+### Objective
 
-```typescript
-private readonly coneCache: BerlinConeCache;
+Define the asset format, chunking scheme, and runtime assumptions before changing behavior.
 
-private readonly handleLoadModel = (event: TileLoadEvent): void => {
-  this.meshRegistry.trackTileScene(event.scene, event.url);
-  // Trigger eager cone computation (async, no frame budget)
-  this.coneCache.getOrCompute(event.url, event.scene, ...).catch(() => {});
-};
+### Deliverables
+
+- typed chunk manifest contract
+- typed chunk payload contract
+- explicit chunk-key scheme in Berlin local world space
+- explicit decision that `tileUrl` is not part of the data model
+
+### Checks
+
+- no IndexedDB-first design
+- no tile-identity cache keys
+- no `THREE.Vector3` in serialized assets
+- no `any`
+
+### Coding agent prompt
+
+```text
+Define the offline dataset contract for precomputed Berlin cones.
+
+Constraints:
+- work only under src/lib/experiences/berlin-flight/
+- no any
+- no browser-local persistence as the primary design
+- key data by stable world chunk coordinates, not tileUrl
+
+Tasks:
+1. Add typed contracts for a cone dataset manifest and cone chunk payload.
+2. Define a chunk-key scheme based on Berlin local world space.
+3. Keep the serialized format flat and structured-clone or binary friendly.
+4. Document the runtime assumptions clearly in code comments where needed.
+
+Return:
+- files added or updated
+- final manifest contract
+- final chunk payload contract
+- any assumptions intentionally kept narrow
 ```
 
----
+## Phase 2 - Build the offline generator path
 
-## First-flight vs subsequent-flight behavior
+### Objective
 
-### First flight (cold cache)
+Move the existing cone-generation logic into a one-time dataset build step.
 
-| What | When | Cost |
-|------|------|------|
-| Tile streams in | Normal tile loading | Network latency |
-| Corner extraction | `load-model` handler, same tick | ~0.1-0.5ms per mesh |
-| Neighborhood sampling | `load-model` handler, after extraction | ~0.5-3ms per mesh (spread across tile loads) |
-| Direction solving | Same tick | ~0.01ms per cone |
-| Write to IndexedDB | `load-model` handler, after compute | Async, non-blocking |
+### Deliverables
 
-Tile loads are already distributed over many frames by the 3D Tiles renderer (download queue of 8, parse queue of 2). Each tile's cone computation adds < 5ms of CPU time **during an already-asynchronous event** — no frame impact.
+- a script or build entrypoint that scans Berlin source data
+- reuse of the existing roof-corner and orientation rules
+- output chunk files plus manifest
 
-### Subsequent flights (warm cache)
+### Checks
 
-| What | When | Cost |
-|------|------|------|
-| Cache lookup | `load-model` handler | ~0.01ms (Map.get) |
-| Deserialize cones | Same tick | ~0.1ms (Float64Array → Vector3) |
-| InstancedMesh update | `tick()` | Same as current `rebuildMesh()` |
+- reuse existing extraction and solving logic where possible
+- do not maintain a second cone algorithm
+- deterministic output across repeated runs on the same source data
+- explicit failure when source tiles or offline inputs are missing
 
-No cone computation at all. Cones appear the same frame the tile loads.
+### Notes
 
----
+This phase is where the expensive work belongs:
 
-## Memory bounds
+- `extractBerlinRoofCornerCandidates(...)`
+- accepted-point filtering
+- `sampleBerlinMeshNeighborhood(...)`
+- `solveBerlinConeAxisDirection(...)`
 
-| Resource | Bound |
-|----------|-------|
-| In-memory cache | ~10,000 cones @ 200 bytes ≈ 2 MB |
-| IndexedDB storage | ~10,000 cones @ 200 bytes ≈ 2 MB |
-| Prune radius | 3,000m from player |
-| Max tiles cached | ~400 tiles (Berlin Mitte coverage) |
+### Coding agent prompt
 
-IndexedDB is not evicted between sessions. A user who explores 400 tiles on day one returns on day two to instant cones.
+```text
+Build the offline Berlin cone dataset generator.
 
----
+Constraints:
+- reuse the existing Berlin cone rules where practical
+- no any
+- no speculative framework around the generator
+- keep the output keyed by world chunk coordinates
 
-## Error handling
+Tasks:
+1. Add a build script that reads Berlin source geometry offline.
+2. Reuse the existing roof-corner extraction and cone-orientation rules.
+3. Produce a manifest plus chunk files.
+4. Keep output deterministic for the same input geometry.
+5. Fail clearly when required offline source data is missing.
 
-- **IndexedDB unavailable (private browsing, quota)**: Fall back to per-session in-memory cache only. Cones are computed once per session but not persisted. Graceful degradation — same behavior as today but without the pop-in.
-- **Corrupt cache entry**: Catch on deserialization, delete corrupt entry, recompute fresh.
-- **Quota exceeded during save**: `saveTileConeData` catches `DOMException`, logs warning, continues with in-memory cache.
+Return:
+- generator entrypoint
+- generated artifact layout
+- which existing runtime modules were reused
+- any generator-only assumptions
+```
 
----
+## Phase 3 - Add the simplest runtime chunk loader
 
-## Order of implementation
+### Objective
 
-1. **`cone-cache/storage.ts`** — IndexedDB layer (spec + test first)
-2. **`cone-cache/cache.ts`** — `BerlinConeCache` class with getOrCompute, query, prune
-3. **`runtime/tiles-runtime.ts`** — Wire cache into `handleLoadModel`
-4. **`runtime/cone-grid-runtime.ts`** — Rewrite `update()` to query cache by position
-5. **`scene.ts`** — Strip `PlacementController`/`ConePlacementController` from tick, route through cache
-6. **`placement/controller.ts`** — Keep for now (potential future use), remove if orphaned
-7. **`cone-placement/controller.ts`** — Strip to cache-query adapter or remove
-8. **Test on Quest** — Verify no pop-in, no frame drops, cache survives reload
+Load precomputed cone chunks by player position with a minimal runtime API.
 
-Steps 1-7 can be parallelized: 1+2 together, then 3-7 in parallel (disjoint write scopes).
+### Deliverables
 
----
+- manifest loader
+- chunk loader keyed by chunk coordinates
+- in-memory loaded-chunk map
+- query API for active cones near the player
 
-## Migration path
+### Checks
 
-The cache is **additive** — it can be introduced alongside the existing system. Implement as follows:
+- no offline computation in runtime
+- no IndexedDB dependency required for correctness
+- one clear source of truth: manifest + chunk files
+- clear behavior when a chunk file is missing or malformed
 
-1. Add cache and wire it up
-2. Both systems active: cache populates during normal flight, but `ConeGridRuntime` still reads from the old chain
-3. Switch `ConeGridRuntime` to read from cache
-4. Remove old chain once cache is verified stable on Quest
+### Suggested module split
 
-This way, if something goes wrong, the old system is still intact.
+- `cone-data/types.ts`
+- `cone-data/manifest.ts`
+- `cone-data/chunk-loader.ts`
+- `cone-data/runtime-store.ts`
+
+If one of these can be collapsed cleanly, collapse it.
+
+### Coding agent prompt
+
+```text
+Implement the minimal runtime loader for precomputed Berlin cone chunks.
+
+Constraints:
+- work only under src/lib/experiences/berlin-flight/
+- no any
+- no runtime cone generation
+- no IndexedDB required for the first pass
+
+Tasks:
+1. Load the cone dataset manifest once.
+2. Given player position, derive required chunk keys.
+3. Load missing chunk files into an in-memory map.
+4. Expose a query that returns active cones from loaded chunks.
+5. Drop far chunks from memory with a simple distance rule.
+
+Return:
+- runtime loader API
+- chunk selection rule
+- in-memory cache shape
+- error behavior
+```
+
+## Phase 4 - Switch the cone runtime to chunk-driven data
+
+### Objective
+
+Make cone rendering consume precomputed chunk data instead of live controller output.
+
+### Deliverables
+
+- `BerlinConeGridRuntime` driven by loaded chunk data
+- removal of cone input from the old placement pipeline
+- incremental active-cone updates where possible
+
+### Checks
+
+- avoid full mesh teardown on every small cone-set change if a small incremental path is practical
+- keep visible-cone selection deterministic
+- keep the diff focused on the Berlin cone runtime
+
+### Notes
+
+The current runtime still does full mesh rebuilds on source changes. This phase should at least stop the live generation path; if practical, it should also reduce rebuild churn while chunks stream in.
+
+### Coding agent prompt
+
+```text
+Switch BerlinConeGridRuntime to consume precomputed cone chunks.
+
+Constraints:
+- no any
+- no live cone generation in runtime
+- keep the diff scoped to berlin-flight
+- prefer the smallest incremental update path that actually helps
+
+Tasks:
+1. Make the cone runtime query loaded chunk data by player position.
+2. Stop feeding it cones from BerlinConePlacementController.
+3. Keep active-cone ordering deterministic.
+4. Reduce mesh rebuild churn if possible without broad refactor.
+
+Return:
+- runtime changes
+- whether mesh updates stayed full rebuild or became incremental
+- what remains for later tuning
+```
+
+## Phase 5 - Adapt collision to the precomputed cone stream
+
+### Objective
+
+Keep collision behavior correct while the cone source changes from live generation to chunked data.
+
+### Deliverables
+
+- collision controller consuming chunk-driven active cones
+- correct dirty-mesh invalidation when active chunk cones change
+- no dependency on placement/cone-placement controllers for collision correctness
+
+### Checks
+
+- keep collision semantics unchanged
+- avoid broad collision refactors unless profiling proves they matter
+- no hidden dependence on tile URL keys
+
+### Coding agent prompt
+
+```text
+Adapt Berlin collision to consume precomputed chunk-driven cones.
+
+Constraints:
+- no any
+- keep current collision semantics
+- no broad rewrite unless required for correctness
+
+Tasks:
+1. Wire collision to the new active cone source.
+2. Ensure mesh invalidation still happens when active cones change.
+3. Remove dependency on the old live cone-generation path where possible.
+
+Return:
+- files changed
+- collision invalidation behavior
+- any remaining hot spots worth profiling later
+```
+
+## Phase 6 - Remove the live cone-generation path
+
+### Objective
+
+Delete the runtime placement/orientation pipeline once the chunked dataset path is proven.
+
+### Deliverables
+
+- `scene.ts` no longer updates placement and cone-placement for cones
+- old cone-generation runtime path removed or fully orphaned behind an explicit debug switch
+- debug overlay updated to report the new chunk-based state
+
+### Checks
+
+- do not leave two competing runtime cone sources active
+- remove dead code if it is clearly unused
+- keep useful debug stats
+
+### Coding agent prompt
+
+```text
+Remove the live Berlin cone-generation runtime path after the chunked dataset path is working.
+
+Constraints:
+- no any
+- keep useful debug instrumentation
+- do not leave duplicate active paths for cones
+
+Tasks:
+1. Remove cone-related use of BerlinPlacementController and BerlinConePlacementController from runtime.
+2. Clean up scene wiring and debug overlay reporting.
+3. Delete or isolate dead cone-generation runtime code if it is no longer used.
+
+Return:
+- files removed or updated
+- what runtime path now owns cones
+- any code intentionally kept for offline generation reuse
+```
+
+## Phase 7 - Validate Quest behavior and tighten the asset
+
+### Objective
+
+Verify that the new design actually improves headset behavior and tune chunk size or payload shape if needed.
+
+### Deliverables
+
+- Quest validation pass
+- chunk-size tuning notes
+- memory and load-behavior notes
+- final call on whether more runtime incrementality is needed
+
+### Checks
+
+- cones appear without generation delay
+- no pop-in caused by recomputation
+- acceptable memory use for loaded chunks
+- acceptable chunk-load behavior while moving quickly
+
+### Validation targets
+
+- warm and cold app start
+- fast traversal across chunk boundaries
+- tile unload and reload behavior
+- collision consistency on chunk transitions
+
+### Coding agent prompt
+
+```text
+Validate the precomputed Berlin cone dataset path on Quest and tighten the last weak spots.
+
+Constraints:
+- focus on observed runtime behavior
+- no speculative feature work
+- keep fixes narrowly tied to measured problems
+
+Tasks:
+1. Verify cones no longer depend on runtime generation.
+2. Check chunk transition behavior while flying.
+3. Review memory behavior for loaded chunk data.
+4. Tune chunk size or simple loader policy if the current values are obviously wrong.
+
+Return:
+- observed issues
+- fixes applied
+- remaining risks
+- final recommendation on whether further runtime incrementality is needed
+```
+
+## Migration order
+
+Implementation order should follow the phases:
+
+1. Phase 1 - dataset contract
+2. Phase 2 - offline generator
+3. Phase 3 - runtime chunk loader
+4. Phase 4 - cone runtime cutover
+5. Phase 5 - collision adaptation
+6. Phase 6 - remove old runtime path
+7. Phase 7 - Quest validation and tuning
+
+The key rule is simple:
+
+```text
+Do not remove the live runtime path until the offline-generated chunk dataset is loading correctly in the scene.
+```
+
+## Non-goals for the first pass
+
+- browser-local IndexedDB cone persistence
+- per-user cone authoring
+- live cone recomputation after tiles load
+- editor tooling for cone data
+- generalized spatial asset framework
+- compression work before there is a measured payload problem
+
+## Why this version is better
+
+This version matches the actual goal.
+
+It is not “compute on first visit and cache by tile”.
+It is “compute once for Berlin, store by world region, and stream like any other offline asset”.
+
+That is the version that meaningfully reduces runtime work.
