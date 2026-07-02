@@ -39,15 +39,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
   private readonly texture: THREE.CanvasTexture;
   private readonly material: THREE.SpriteMaterial;
   private readonly sprite: THREE.Sprite;
-  private readonly tilesStats: TilesRuntimeDebugStats = {
-    hasRenderer: false,
-    isDisposed: false,
-    isVisible: false,
-    loadProgress: 0,
-    visibleTiles: 0,
-    activeTiles: 0,
-    trackedMeshes: 0,
-  };
+  private tilesStats: TilesRuntimeDebugStats = createEmptyTilesStats();
   private readonly collisionStats: BerlinCollisionDebugStats = {
     activeCones: 0,
     trackedMeshes: 0,
@@ -122,13 +114,10 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     if (elapsed < this.nextUpdate) return;
 
     this.nextUpdate = elapsed + BERLIN_DEBUG_OVERLAY_UPDATE_SECONDS;
-    state.tilesRuntime?.writeDebugStats(this.tilesStats);
+    this.tilesStats = state.tilesRuntime?.getDebugStats() ?? createEmptyTilesStats();
     state.collisionController.writeDebugStats(this.collisionStats);
     this.placementSnapshot = state.placementController.getSnapshot();
     this.conePlacementSnapshot = state.conePlacementController.getSnapshot();
-    if (!state.tilesRuntime) {
-      this.resetTilesStats();
-    }
 
     this.draw(state);
     this.texture.needsUpdate = true;
@@ -141,16 +130,6 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     this.sprite.removeFromParent();
     this.material.dispose();
     this.texture.dispose();
-  }
-
-  private resetTilesStats(): void {
-    this.tilesStats.hasRenderer = false;
-    this.tilesStats.isDisposed = false;
-    this.tilesStats.isVisible = false;
-    this.tilesStats.loadProgress = 0;
-    this.tilesStats.visibleTiles = 0;
-    this.tilesStats.activeTiles = 0;
-    this.tilesStats.trackedMeshes = 0;
   }
 
   private draw(state: BerlinState): void {
@@ -204,4 +183,16 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
   private drawLine(index: number, text: string): void {
     this.ctx.fillText(text, 18, 34 + index * 22);
   }
+}
+
+function createEmptyTilesStats(): TilesRuntimeDebugStats {
+  return {
+    hasRenderer: false,
+    isDisposed: false,
+    isVisible: false,
+    loadProgress: 0,
+    visibleTiles: 0,
+    activeTiles: 0,
+    trackedMeshes: 0,
+  };
 }

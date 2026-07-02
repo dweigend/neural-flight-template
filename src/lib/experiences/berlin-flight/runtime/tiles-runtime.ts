@@ -222,25 +222,30 @@ export class TilesRuntimeAdapter {
   }
 
   // fallow-ignore-next-line unused-class-member
-  public writeDebugStats(target: TilesRuntimeDebugStats): void {
+  public getDebugStats(): TilesRuntimeDebugStats {
     const renderer = this.renderer;
 
-    target.hasRenderer = Boolean(renderer);
-    target.isDisposed = this.disposed;
-    target.trackedMeshes = this.meshRegistry.getTrackedMeshCount();
-
     if (!renderer) {
-      target.isVisible = false;
-      target.loadProgress = 0;
-      target.visibleTiles = 0;
-      target.activeTiles = 0;
-      return;
+      return {
+        hasRenderer: false,
+        isDisposed: this.disposed,
+        isVisible: false,
+        loadProgress: 0,
+        visibleTiles: 0,
+        activeTiles: 0,
+        trackedMeshes: this.meshRegistry.getTrackedMeshCount(),
+      };
     }
 
-    target.isVisible = renderer.group.visible;
-    target.loadProgress = renderer.loadProgress;
-    target.visibleTiles = renderer.visibleTiles.size;
-    target.activeTiles = renderer.activeTiles.size;
+    return {
+      hasRenderer: true,
+      isDisposed: this.disposed,
+      isVisible: renderer.group.visible,
+      loadProgress: renderer.loadProgress,
+      visibleTiles: renderer.visibleTiles.size,
+      activeTiles: renderer.activeTiles.size,
+      trackedMeshes: this.meshRegistry.getTrackedMeshCount(),
+    };
   }
 
   private getVisibleRenderer(): TilesRenderer | null {
