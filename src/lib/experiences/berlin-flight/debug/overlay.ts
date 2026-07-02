@@ -220,7 +220,7 @@ function getHeatmapDebugLines(state: BerlinState): readonly string[] {
   const playerSample = sampler.sampleGeoPoint(playerGeoPoint.lat, playerGeoPoint.lon);
 
   return [
-    `heatmap: loaded ${sampler.imageWidth}x${sampler.imageHeight} ${sampler.imageOrientation}`,
+    `heatmap: ${sampler.mode} ${sampler.imageWidth}x${sampler.imageHeight} ${sampler.imageOrientation}`,
     `heatmap bounds: N${sampler.bounds.north.toFixed(3)} S${sampler.bounds.south.toFixed(3)} W${sampler.bounds.west.toFixed(3)} E${sampler.bounds.east.toFixed(3)}`,
     "heatmap map: world -> localToGeo(origin) -> linear lat/lon UV",
     `heatmap origin uv: ${originSample.uv.u.toFixed(3)}, ${originSample.uv.v.toFixed(3)} density ${originSample.density.toFixed(2)}`,

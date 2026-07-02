@@ -1,7 +1,10 @@
 import {
+  createBerlinFallbackCameraDensitySampler,
   createBerlinCameraDensitySampler,
   loadBerlinCameraDensityAssetContract,
+  parseBerlinHeatmapBounds,
 } from "./camera-density";
+import rawBounds from "./camera-density.berlin.json";
 import type { BerlinCameraDensitySampler } from "./types";
 
 let berlinCameraDensitySamplerPromise: Promise<BerlinCameraDensitySampler> | null =
@@ -28,15 +31,27 @@ export function setBerlinCameraDensitySamplerForTests(
 }
 
 async function loadBerlinCameraDensitySampler(): Promise<BerlinCameraDensitySampler> {
-  const assetContract = await loadBerlinCameraDensityAssetContract();
-  const rgba = await decodeBerlinCameraDensityRgba(assetContract.imageUrl);
-  const sampler = createBerlinCameraDensitySampler({
-    imageOrientation: assetContract.imageOrientation,
-    bounds: assetContract.bounds,
-    width: rgba.width,
-    height: rgba.height,
-    rgba: rgba.data,
-  });
+  let sampler: BerlinCameraDensitySampler;
+
+  try {
+    const assetContract = await loadBerlinCameraDensityAssetContract();
+    const rgba = await decodeBerlinCameraDensityRgba(assetContract.imageUrl);
+    sampler = createBerlinCameraDensitySampler({
+      imageOrientation: assetContract.imageOrientation,
+      bounds: assetContract.bounds,
+      width: rgba.width,
+      height: rgba.height,
+      rgba: rgba.data,
+    });
+  } catch (error) {
+    console.warn(
+      "[BerlinFlight] Camera density heatmap unavailable. Falling back to max density placement everywhere.",
+      error,
+    );
+    sampler = createBerlinFallbackCameraDensitySampler(
+      parseBerlinHeatmapBounds(rawBounds),
+    );
+  }
 
   berlinCameraDensitySampler = sampler;
   return sampler;

@@ -22,6 +22,7 @@ export interface BerlinHeatmapRaster {
 }
 
 export interface BerlinCameraDensitySampler {
+  mode: "asset" | "fallback-max";
   imageOrientation: BerlinHeatmapImageOrientation;
   bounds: BerlinHeatmapBounds;
   imageWidth: number;

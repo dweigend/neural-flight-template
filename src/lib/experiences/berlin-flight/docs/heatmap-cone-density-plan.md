@@ -2,9 +2,9 @@
 
 ## Goal
 
-Drive Berlin cone density from a PNG heatmap while reusing the existing roof-corner extraction, placement, and cone orientation pipeline.
+Drive Berlin cone density from a PNG heatmap while reusing the existing roof-corner extraction, placement, and cone orientation pipeline in the offline cone dataset build.
 
-This phase should only change how many accepted corner points survive per building. It should not replace the current building scan, cone placement, or orientation logic.
+This phase should only change how many accepted corner points survive per building. It should not replace the existing building scan, cone placement, or orientation rules. It should move that density decision out of runtime and into offline dataset generation.
 
 Success criterion:
 
@@ -17,12 +17,23 @@ Success criterion:
 
 - heatmap input format: PNG
 - image orientation: north is up
-- placement generation: once on load
+- placement generation: offline during cone dataset build
 - heatmap scope: whole of Berlin
 - alignment tolerance: first pass can be visually approximate
 - bright areas: truly no cameras
 - dark areas: up to 2 cameras per building
 - placement/orientation rules: keep using the existing Berlin placement and cone-placement logic
+
+## Relationship to the precomputed cone dataset
+
+This plan is now a sub-plan of the offline cone dataset flow described in [precomputed-cones-plan.md](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/docs/precomputed-cones-plan.md).
+
+That means:
+
+- heatmap density is applied offline before cone chunks are written
+- runtime should not decode the heatmap
+- runtime should not sample heatmap density
+- runtime should not decide whether a building gets `0`, `1`, or `2` cone candidates
 
 ## Existing integration points
 
@@ -91,7 +102,7 @@ Notes:
 
 ## Coordinate mapping
 
-Use building world positions already produced by the existing Berlin runtime.
+Use building world positions already produced by the existing Berlin pipeline, but apply the mapping in the offline generator rather than during flight.
 
 Expected mapping path:
 
@@ -112,7 +123,7 @@ Clamp out-of-range values and treat them as zero density.
 Keep the diff small:
 
 1. add a tiny heatmap asset contract and loader local to `berlin-flight`
-2. extend the candidate-stage seam so it can limit accepted corners per building from heatmap density
+2. extend the candidate-stage seam used by offline cone generation so it can limit accepted corners per building from heatmap density
 3. raise `MAX_CORNERS_PER_BUILDING` ceiling from `1` to `2`
 4. keep the extractor, spacing filter, and cone placement logic otherwise intact
 
@@ -122,7 +133,7 @@ Do not add:
 - editor tooling
 - arbitrary projection systems
 - probabilistic density
-- runtime re-generation after load
+- runtime heatmap-driven candidate selection
 
 ## Suggested module split
 
@@ -180,7 +191,7 @@ Return:
 
 ### Objective
 
-Load the heatmap once and expose deterministic density sampling.
+Load the heatmap in the offline build path and expose deterministic density sampling.
 
 ### Deliverables
 
@@ -198,14 +209,14 @@ Load the heatmap once and expose deterministic density sampling.
 ### Coding agent prompt
 
 ```text
-Implement a minimal Berlin heatmap loader and sampler for cone density.
+Implement a minimal Berlin heatmap loader and sampler for offline cone density generation.
 
 Constraints:
 - work only under src/lib/experiences/berlin-flight/
-- load once on startup, no live updates
+- load in the offline generation path, not during flight
 - no any
 - no new dependency unless already installed and clearly necessary
-- prefer the smallest browser-safe/runtime-safe path that fits the existing app
+- prefer the smallest path that fits the existing offline dataset flow
 
 Tasks:
 1. Load camera-density.berlin.png and camera-density.berlin.json once.
@@ -217,7 +228,7 @@ Tasks:
 Return:
 - loader API
 - sampler API
-- where initialization happens
+- where the offline generator initializes it
 - any dependency choice and why
 ```
 
@@ -225,13 +236,14 @@ Return:
 
 ### Objective
 
-Use the existing placement seam to decide whether a building keeps 0, 1, or 2 candidates.
+Use the existing placement seam in offline cone generation to decide whether a building keeps 0, 1, or 2 candidates.
 
 ### Deliverables
 
 - deterministic count mapping from density
 - per-building cap derived from heatmap
 - no change to downstream cone orientation logic
+- no runtime placement decision from heatmap density
 
 ### Rules
 
@@ -242,13 +254,13 @@ Use the existing placement seam to decide whether a building keeps 0, 1, or 2 ca
 ### Checks
 
 - keep behavior deterministic
-- avoid touching the cone-placement controller unless required by types
+- avoid touching the runtime cone-placement controller unless required for offline reuse
 - do not reimplement building placement
 
 ### Coding agent prompt
 
 ```text
-Connect the Berlin heatmap sampler to the existing roof-corner candidate stage.
+Connect the Berlin heatmap sampler to the existing roof-corner candidate stage used by offline cone generation.
 
 Constraints:
 - work only under src/lib/experiences/berlin-flight/
@@ -266,6 +278,7 @@ Tasks:
 3. Trim that building's candidate list deterministically before global spacing runs.
 4. Raise the current per-building ceiling from 1 to 2 where needed.
 5. Keep all existing placement/orientation behavior intact after that point.
+6. Ensure runtime consumes only the generated cone dataset, not heatmap decisions.
 
 Return:
 - exact integration point used
@@ -277,7 +290,7 @@ Return:
 
 ### Objective
 
-Make the first-pass whole-Berlin alignment explicit and debuggable.
+Make the first-pass whole-Berlin alignment explicit and debuggable in the offline generation path.
 
 ### Deliverables
 
@@ -300,6 +313,7 @@ Constraints:
 - no GIS framework
 - no any
 - keep changes local to berlin-flight
+- target the offline dataset generator and its debug outputs, not the flight runtime
 
 Tasks:
 1. Document or encode the exact mapping from Berlin world/geographic coordinates to image UV.
@@ -308,7 +322,7 @@ Tasks:
    - image dimensions
    - geographic bounds
    - sampled density for at least one known position
-3. Keep this lightweight and local to the existing Berlin debug path if possible.
+3. Keep this lightweight and local to the offline generator or shared debug path if possible.
 
 Return:
 - mapping summary
@@ -331,6 +345,7 @@ Leave one small check behind for the non-trivial mapping logic.
 
 - no giant test harness
 - cover the threshold edges and one coordinate sample
+- keep the checks aligned with offline generation behavior
 
 ### Coding agent prompt
 

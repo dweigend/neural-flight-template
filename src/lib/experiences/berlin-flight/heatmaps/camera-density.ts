@@ -31,6 +31,7 @@ export function createBerlinCameraDensitySampler(
   validateBerlinHeatmapRaster(raster);
 
   return {
+    mode: "asset",
     imageOrientation: raster.imageOrientation,
     bounds: raster.bounds,
     imageWidth: raster.width,
@@ -40,6 +41,29 @@ export function createBerlinCameraDensitySampler(
     },
     sampleGeoPoint(lat: number, lon: number): BerlinCameraDensitySample {
       return sampleBerlinCameraDensityRaster(raster, lat, lon);
+    },
+  };
+}
+
+export function createBerlinFallbackCameraDensitySampler(
+  bounds: BerlinHeatmapBounds,
+): BerlinCameraDensitySampler {
+  return {
+    mode: "fallback-max",
+    imageOrientation: BERLIN_CAMERA_DENSITY_IMAGE_ORIENTATION,
+    bounds,
+    imageWidth: 1,
+    imageHeight: 1,
+    sampleDensity(): number {
+      return 1;
+    },
+    sampleGeoPoint(lat: number, lon: number): BerlinCameraDensitySample {
+      return {
+        density: 1,
+        uv: mapGeoPointToBerlinHeatmapUv(bounds, lat, lon),
+        pixelX: 0,
+        pixelY: 0,
+      };
     },
   };
 }

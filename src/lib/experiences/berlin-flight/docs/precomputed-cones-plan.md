@@ -9,6 +9,7 @@ Berlin cone positions and orientations should be computed once for the whole Ber
 Success criteria:
 
 - no roof-corner extraction during flight
+- no heatmap density sampling during flight
 - no neighborhood sampling during flight
 - no cone orientation solving during flight
 - no cone pop-in caused by recomputation after tile reload
@@ -20,6 +21,7 @@ Success criteria:
 - precompute scope: whole Berlin dataset, not “first visit” cache
 - runtime key: stable world-space chunk coordinates, not `tileUrl`
 - persistence model: shipped or generated artifact, not browser-local IndexedDB as the primary source
+- heatmap placement rule: baked into the generated dataset before runtime
 - runtime behavior: load nearby cone chunks by player position
 - existing live cone-generation path: removable after validation
 
@@ -47,6 +49,7 @@ Target model:
 ```text
 Offline build step
   -> scan Berlin source data once
+  -> apply heatmap density placement rule once
   -> extract accepted cone volumes once
   -> write cone chunks keyed by world region
 
@@ -65,6 +68,7 @@ The expensive part moves out of the headset runtime and into an offline asset-ge
 Offline generator
   -> Berlin tiles / source meshes
   -> roof-corner extraction
+  -> heatmap-based candidate limiting
   -> placement filtering
   -> mesh-neighborhood sampling
   -> cone orientation solving
@@ -107,6 +111,32 @@ Recommended first-pass chunk size:
 - `240m` or `480m`
 
 The exact value should match the existing Berlin spatial scale and be large enough to keep file count reasonable.
+
+## Heatmap placement rule
+
+The offline dataset build must include the heatmap-based placement logic already defined under:
+
+- [heatmaps/camera-density.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/heatmaps/camera-density.ts)
+- [heatmaps/camera-density-loader.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/heatmaps/camera-density-loader.ts)
+- [heatmaps/camera-density.berlin.png](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/heatmaps/camera-density.berlin.png)
+- [heatmaps/camera-density.berlin.json](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/heatmaps/camera-density.berlin.json)
+- [heatmap-cone-density-plan.md](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/docs/heatmap-cone-density-plan.md)
+
+That means cone placement density is decided offline, before chunk data is written.
+
+Runtime should not:
+
+- decode the heatmap
+- sample heatmap density
+- decide whether a building gets `0`, `1`, or `2` cone candidates
+
+The offline build should keep the same deterministic rule:
+
+- `density < 0.34` -> `0`
+- `0.34 <= density < 0.67` -> `1`
+- `density >= 0.67` -> `2`
+
+This heatmap step belongs between raw roof-corner extraction and final accepted-point selection for cone generation.
 
 ## Serialization format
 
@@ -158,8 +188,10 @@ What disappears from runtime:
 
 - `BerlinPlacementController.update(...)`
 - `BerlinConePlacementController.update(...)`
+- runtime heatmap sampling for placement density
 - runtime calls to:
   - `extractBerlinRoofCornerCandidates(...)`
+  - heatmap density lookup for candidate count
   - `sampleBerlinMeshNeighborhood(...)`
   - `solveBerlinConeAxisDirection(...)`
 
@@ -168,6 +200,8 @@ What disappears from runtime:
 The current code already defines the logic that should move offline:
 
 - roof-corner extraction in [placement/corner-extractor.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/placement/corner-extractor.ts)
+- heatmap density sampling in [heatmaps/camera-density.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/heatmaps/camera-density.ts)
+- heatmap asset loading in [heatmaps/camera-density-loader.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/heatmaps/camera-density-loader.ts)
 - accepted-point filtering in [placement/corner-registry.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/placement/corner-registry.ts)
 - neighborhood sampling in [cone-placement/mesh-neighborhood.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/cone-placement/mesh-neighborhood.ts)
 - orientation solving in [cone-placement/orientation-solver.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/cone-placement/orientation-solver.ts)
@@ -175,6 +209,7 @@ The current code already defines the logic that should move offline:
 - cone-driven collision in [collision/controller.ts](/Users/juliuswenk/Desktop/KD/borrowed-senses/neural-flight-template/src/lib/experiences/berlin-flight/collision/controller.ts)
 
 The plan should reuse these rules. It should not invent a second cone algorithm.
+The same applies to the heatmap rule: reuse it offline instead of reimplementing a different density policy in the dataset builder.
 
 ## Asset layout
 
@@ -260,18 +295,21 @@ Return:
 
 ### Objective
 
-Move the existing cone-generation logic into a one-time dataset build step.
+Move the existing cone-generation logic and heatmap-based placement logic into a one-time dataset build step.
 
 ### Deliverables
 
 - a script or build entrypoint that scans Berlin source data
+- reuse of the existing heatmap density rule
 - reuse of the existing roof-corner and orientation rules
 - output chunk files plus manifest
 
 ### Checks
 
 - reuse existing extraction and solving logic where possible
+- reuse the existing heatmap loader/sampler logic or its exact rule
 - do not maintain a second cone algorithm
+- do not maintain a second heatmap placement rule
 - deterministic output across repeated runs on the same source data
 - explicit failure when source tiles or offline inputs are missing
 
@@ -280,6 +318,7 @@ Move the existing cone-generation logic into a one-time dataset build step.
 This phase is where the expensive work belongs:
 
 - `extractBerlinRoofCornerCandidates(...)`
+- heatmap density lookup and candidate cap selection
 - accepted-point filtering
 - `sampleBerlinMeshNeighborhood(...)`
 - `solveBerlinConeAxisDirection(...)`
@@ -291,21 +330,22 @@ Build the offline Berlin cone dataset generator.
 
 Constraints:
 - reuse the existing Berlin cone rules where practical
+- reuse the existing Berlin heatmap placement rule
 - no any
 - no speculative framework around the generator
 - keep the output keyed by world chunk coordinates
 
 Tasks:
 1. Add a build script that reads Berlin source geometry offline.
-2. Reuse the existing roof-corner extraction and cone-orientation rules.
+2. Reuse the existing roof-corner extraction, heatmap density, and cone-orientation rules.
 3. Produce a manifest plus chunk files.
 4. Keep output deterministic for the same input geometry.
-5. Fail clearly when required offline source data is missing.
+5. Fail clearly when required offline source data or heatmap assets are missing.
 
 Return:
 - generator entrypoint
 - generated artifact layout
-- which existing runtime modules were reused
+- which existing runtime modules or heatmap modules were reused
 - any generator-only assumptions
 ```
 
@@ -325,6 +365,7 @@ Load precomputed cone chunks by player position with a minimal runtime API.
 ### Checks
 
 - no offline computation in runtime
+- no heatmap density computation in runtime
 - no IndexedDB dependency required for correctness
 - one clear source of truth: manifest + chunk files
 - clear behavior when a chunk file is missing or malformed
@@ -347,6 +388,7 @@ Constraints:
 - work only under src/lib/experiences/berlin-flight/
 - no any
 - no runtime cone generation
+- no runtime heatmap sampling for placement
 - no IndexedDB required for the first pass
 
 Tasks:
@@ -380,6 +422,7 @@ Make cone rendering consume precomputed chunk data instead of live controller ou
 - avoid full mesh teardown on every small cone-set change if a small incremental path is practical
 - keep visible-cone selection deterministic
 - keep the diff focused on the Berlin cone runtime
+- runtime must treat loaded chunk data as final cone truth, not as input to more placement decisions
 
 ### Notes
 
@@ -456,6 +499,7 @@ Delete the runtime placement/orientation pipeline once the chunked dataset path 
 ### Deliverables
 
 - `scene.ts` no longer updates placement and cone-placement for cones
+- `scene.ts` no longer needs heatmap-driven placement decisions for cones
 - old cone-generation runtime path removed or fully orphaned behind an explicit debug switch
 - debug overlay updated to report the new chunk-based state
 
@@ -559,6 +603,7 @@ Do not remove the live runtime path until the offline-generated chunk dataset is
 - browser-local IndexedDB cone persistence
 - per-user cone authoring
 - live cone recomputation after tiles load
+- runtime heatmap-driven candidate selection
 - editor tooling for cone data
 - generalized spatial asset framework
 - compression work before there is a measured payload problem

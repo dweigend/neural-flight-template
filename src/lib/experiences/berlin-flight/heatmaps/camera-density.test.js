@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test";
 import {
   createBerlinCameraDensitySampler,
+  createBerlinFallbackCameraDensitySampler,
   mapGeoPointToBerlinHeatmapUv,
   parseBerlinHeatmapBounds,
 } from "./camera-density";
@@ -50,6 +51,21 @@ test("createBerlinCameraDensitySampler returns inverted luminance density and ze
   expect(sampler.sampleDensity(52.5, 13.1)).toBe(1);
   expect(sampler.sampleDensity(52.5, 13.7)).toBe(0);
   expect(sampler.sampleDensity(60, 13.1)).toBe(0);
+  expect(sampler.mode).toBe("asset");
+});
+
+test("createBerlinFallbackCameraDensitySampler returns max density everywhere", () => {
+  const sampler = createBerlinFallbackCameraDensitySampler({
+    north: 52.675,
+    south: 52.338,
+    west: 13.088,
+    east: 13.761,
+  });
+
+  expect(sampler.mode).toBe("fallback-max");
+  expect(sampler.sampleDensity(52.5, 13.4)).toBe(1);
+  expect(sampler.sampleDensity(60, 0)).toBe(1);
+  expect(sampler.sampleGeoPoint(52.5, 13.4).density).toBe(1);
 });
 
 test("mapGeoPointToBerlinHeatmapUv uses north-up linear bounds mapping", () => {

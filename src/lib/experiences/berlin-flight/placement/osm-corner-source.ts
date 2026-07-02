@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { BERLIN_PLACEMENT } from "./config";
+import { updateTrackedMeshWorldSphere } from "../collision/cone-mesh-bounds";
 import type { TrackedTileMesh } from "../collision/tile-mesh-types";
 import type { BerlinPlacementBuildingSource } from "./types";
 
@@ -14,6 +15,8 @@ export function collectNearbyBerlinBuildingSources(
   }> = [];
 
   for (const trackedMesh of trackedMeshes) {
+    updateTrackedMeshWorldSphere(trackedMesh);
+
     const maxDistance = scanRadius + trackedMesh.worldSphere.radius;
     const distanceSq =
       trackedMesh.worldSphere.center.distanceToSquared(playerPosition);
