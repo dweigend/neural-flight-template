@@ -1,8 +1,3 @@
-import {
-  PUBLIC_BERLIN_ION_ASSET_ID,
-  PUBLIC_BERLIN_TILES_URL,
-  PUBLIC_CESIUM_ION_TOKEN,
-} from "$env/static/public";
 import { GoogleCloudAuthPlugin } from "3d-tiles-renderer/plugins";
 import { TilesRenderer } from "3d-tiles-renderer";
 import * as THREE from "three";
@@ -11,6 +6,7 @@ import { BerlinTileMeshRegistry } from "../collision/mesh-tracker";
 import type { TrackedTileMesh } from "../collision/tile-mesh-types";
 import { BERLIN_MITTE_ORIGIN } from "../geo/berlin-mitte-origin";
 import { getECEFToLocalMatrix } from "../geo/coordinates";
+import type { BerlinTilesSource } from "./tiles-source";
 
 export interface TilesRuntimeDebugStats {
   hasRenderer: boolean;
@@ -33,14 +29,6 @@ type TileDisposeEvent = {
   scene: THREE.Object3D;
   tile: unknown;
   type: "dispose-model";
-};
-
-type CesiumIonEndpointResponse = {
-  accessToken?: unknown;
-  options?: {
-    url?: unknown;
-  };
-  url?: unknown;
 };
 
 const BERLIN_TILE_RUNTIME_TUNING = {
@@ -70,24 +58,17 @@ export class TilesRuntimeAdapter {
   private readonly token: string;
   private disposed = false;
 
-  private constructor(url: string, token: string) {
-    this.url = url;
-    this.token = token;
-  }
-
-  public static isSourceConfigured(): boolean {
-    return Boolean(
-      PUBLIC_BERLIN_TILES_URL ||
-        (PUBLIC_CESIUM_ION_TOKEN && Number(PUBLIC_BERLIN_ION_ASSET_ID)),
-    );
+  private constructor(source: BerlinTilesSource) {
+    this.url = source.url;
+    this.token = source.token;
   }
 
   public static async create(
     group: Group,
+    source: BerlinTilesSource,
     signal?: AbortSignal,
   ): Promise<TilesRuntimeAdapter> {
-    const { url, token } = await resolveBerlinTileset();
-    const runtime = new TilesRuntimeAdapter(url, token);
+    const runtime = new TilesRuntimeAdapter(source);
     const renderer = await runtime.initializeTiles(group, signal);
     const localMatrix = getECEFToLocalMatrix(BERLIN_MITTE_ORIGIN);
     renderer.group.matrixAutoUpdate = false;
@@ -100,6 +81,7 @@ export class TilesRuntimeAdapter {
     group: Group,
     signal?: AbortSignal,
   ): Promise<TilesRenderer> {
+    this.assertCanLoad(signal);
     this.assertHasTilesUrl();
 
     let renderer: TilesRenderer | null = null;
@@ -112,7 +94,6 @@ export class TilesRuntimeAdapter {
 
       renderer = new TilesRenderer(this.url);
       this.configureRenderer(renderer);
-      this.disposeRendererIfCancelled(renderer, signal);
 
       this.renderer = renderer;
       group.add(renderer.group);
@@ -143,16 +124,6 @@ export class TilesRuntimeAdapter {
   private assertHasTilesUrl(): void {
     if (!this.url) {
       throw new Error("[BerlinFlight] Cannot load tiles: URL is null or empty");
-    }
-  }
-
-  private disposeRendererIfCancelled(
-    renderer: TilesRenderer,
-    signal?: AbortSignal,
-  ): void {
-    if (this.disposed || isSignalAborted(signal)) {
-      renderer.dispose();
-      throw new Error("[BerlinFlight] Tile loading was cancelled.");
     }
   }
 
@@ -321,59 +292,4 @@ export class TilesRuntimeAdapter {
 
 function isSignalAborted(signal?: AbortSignal): boolean {
   return signal?.aborted === true;
-}
-
-async function resolveBerlinTileset(): Promise<{
-  url: string;
-  token: string;
-}> {
-  if (PUBLIC_BERLIN_TILES_URL) {
-    return {
-      url: PUBLIC_BERLIN_TILES_URL,
-      token: PUBLIC_CESIUM_ION_TOKEN || "",
-    };
-  }
-
-  return resolveCesiumIonTileset();
-}
-
-async function resolveCesiumIonTileset(): Promise<{
-  url: string;
-  token: string;
-}> {
-  const assetId = Number(PUBLIC_BERLIN_ION_ASSET_ID);
-  if (!PUBLIC_CESIUM_ION_TOKEN || !assetId) {
-    throw new Error(
-      "[BerlinFlight] Missing Cesium Ion credentials in public env.",
-    );
-  }
-
-  const endpoint = `https://api.cesium.com/v1/assets/${assetId}/endpoint?access_token=${PUBLIC_CESIUM_ION_TOKEN}`;
-  const response = await fetch(endpoint);
-  if (!response.ok) {
-    throw new Error(
-      `[BerlinFlight] Failed to resolve Cesium Ion asset: ${response.status} ${await response.text()}`,
-    );
-  }
-
-  const data = (await response.json()) as CesiumIonEndpointResponse;
-
-  return {
-    url: getCesiumTilesetUrl(data),
-    token: getStringValue(data.accessToken),
-  };
-}
-
-function getCesiumTilesetUrl(data: CesiumIonEndpointResponse): string {
-  const tilesetUrl =
-    getStringValue(data.url) || getStringValue(data.options?.url);
-  if (tilesetUrl) return tilesetUrl;
-
-  throw new Error(
-    `[BerlinFlight] Cesium Ion response missing tileset URL. Response: ${JSON.stringify(data)}`,
-  );
-}
-
-function getStringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }

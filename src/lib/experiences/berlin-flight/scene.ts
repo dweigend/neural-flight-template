@@ -14,6 +14,10 @@ import { BerlinCollisionController } from "./collision/controller";
 import { BerlinConePlacementController } from "./cone-placement/controller";
 import { BerlinPlacementController } from "./placement/controller";
 import { TilesRuntimeAdapter } from "./runtime/tiles-runtime";
+import {
+  isBerlinTilesSourceConfigured,
+  resolveBerlinTilesSource,
+} from "./runtime/tiles-source";
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA } from "$lib/config/flight";
 
@@ -164,14 +168,16 @@ export function tick(state: BerlinState, ctx: TickContext) {
 }
 
 async function loadTilesWhenConfigured(state: BerlinState): Promise<void> {
-  if (!TilesRuntimeAdapter.isSourceConfigured()) {
+  if (!isBerlinTilesSourceConfigured()) {
     state.isLoading = false;
     return;
   }
 
   try {
+    const source = await resolveBerlinTilesSource();
     const runtime = await TilesRuntimeAdapter.create(
       state.tilesGroup,
+      source,
       state.abortController.signal,
     );
     if (state.isDisposed || state.abortController.signal.aborted) {
