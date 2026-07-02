@@ -1,10 +1,12 @@
 import rawBounds from "./camera-density.berlin.json";
 import type {
+  BerlinCameraDensitySample,
   BerlinCameraDensitySampler,
   BerlinHeatmapAssetContract,
   BerlinHeatmapBounds,
   BerlinHeatmapImageOrientation,
   BerlinHeatmapRaster,
+  BerlinHeatmapUv,
 } from "./types";
 
 export const BERLIN_CAMERA_DENSITY_IMAGE_PATH =
@@ -34,23 +36,24 @@ export function createBerlinCameraDensitySampler(
     imageWidth: raster.width,
     imageHeight: raster.height,
     sampleDensity(lat: number, lon: number): number {
-      if (!isWithinBounds(raster.bounds, lat, lon)) {
-        return 0;
-      }
-
-      const u = clamp01((lon - raster.bounds.west) / (raster.bounds.east - raster.bounds.west));
-      const v = clamp01((raster.bounds.north - lat) / (raster.bounds.north - raster.bounds.south));
-      const x = Math.min(raster.width - 1, Math.floor(u * raster.width));
-      const y = Math.min(raster.height - 1, Math.floor(v * raster.height));
-      const pixelIndex = (y * raster.width + x) * 4;
-
-      return getDensityFromRgba(
-        raster.rgba[pixelIndex],
-        raster.rgba[pixelIndex + 1],
-        raster.rgba[pixelIndex + 2],
-      );
+      return sampleBerlinCameraDensityRaster(raster, lat, lon).density;
+    },
+    sampleGeoPoint(lat: number, lon: number): BerlinCameraDensitySample {
+      return sampleBerlinCameraDensityRaster(raster, lat, lon);
     },
   };
+}
+
+export function mapGeoPointToBerlinHeatmapUv(
+  bounds: BerlinHeatmapBounds,
+  lat: number,
+  lon: number,
+): BerlinHeatmapUv {
+  const inBounds = isWithinBounds(bounds, lat, lon);
+  const u = clamp01((lon - bounds.west) / (bounds.east - bounds.west));
+  const v = clamp01((bounds.north - lat) / (bounds.north - bounds.south));
+
+  return { u, v, inBounds };
 }
 
 export function parseBerlinHeatmapBounds(value: unknown): BerlinHeatmapBounds {
@@ -97,6 +100,37 @@ function isWithinBounds(bounds: BerlinHeatmapBounds, lat: number, lon: number): 
     lon >= bounds.west &&
     lon <= bounds.east
   );
+}
+
+function sampleBerlinCameraDensityRaster(
+  raster: BerlinHeatmapRaster,
+  lat: number,
+  lon: number,
+): BerlinCameraDensitySample {
+  const uv = mapGeoPointToBerlinHeatmapUv(raster.bounds, lat, lon);
+  if (!uv.inBounds) {
+    return {
+      density: 0,
+      uv,
+      pixelX: -1,
+      pixelY: -1,
+    };
+  }
+
+  const pixelX = Math.min(raster.width - 1, Math.floor(uv.u * raster.width));
+  const pixelY = Math.min(raster.height - 1, Math.floor(uv.v * raster.height));
+  const pixelIndex = (pixelY * raster.width + pixelX) * 4;
+
+  return {
+    density: getDensityFromRgba(
+      raster.rgba[pixelIndex],
+      raster.rgba[pixelIndex + 1],
+      raster.rgba[pixelIndex + 2],
+    ),
+    uv,
+    pixelX,
+    pixelY,
+  };
 }
 
 function getDensityFromRgba(red: number, green: number, blue: number): number {

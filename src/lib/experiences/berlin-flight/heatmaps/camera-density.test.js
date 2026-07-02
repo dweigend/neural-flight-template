@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test";
 import {
   createBerlinCameraDensitySampler,
+  mapGeoPointToBerlinHeatmapUv,
   parseBerlinHeatmapBounds,
 } from "./camera-density";
 
@@ -49,4 +50,40 @@ test("createBerlinCameraDensitySampler returns inverted luminance density and ze
   expect(sampler.sampleDensity(52.5, 13.1)).toBe(1);
   expect(sampler.sampleDensity(52.5, 13.7)).toBe(0);
   expect(sampler.sampleDensity(60, 13.1)).toBe(0);
+});
+
+test("mapGeoPointToBerlinHeatmapUv uses north-up linear bounds mapping", () => {
+  expect(
+    mapGeoPointToBerlinHeatmapUv(
+      {
+        north: 52.675,
+        south: 52.338,
+        west: 13.088,
+        east: 13.761,
+      },
+      52.675,
+      13.088,
+    ),
+  ).toEqual({
+    u: 0,
+    v: 0,
+    inBounds: true,
+  });
+
+  expect(
+    mapGeoPointToBerlinHeatmapUv(
+      {
+        north: 52.675,
+        south: 52.338,
+        west: 13.088,
+        east: 13.761,
+      },
+      52.338,
+      13.761,
+    ),
+  ).toEqual({
+    u: 1,
+    v: 1,
+    inBounds: true,
+  });
 });

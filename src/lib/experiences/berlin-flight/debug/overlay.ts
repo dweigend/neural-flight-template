@@ -6,6 +6,9 @@ import {
 } from "./config";
 import type { BerlinCollisionDebugStats } from "../collision/controller";
 import type { BerlinConePlacementDebugSnapshot } from "../cone-placement/types";
+import { BERLIN_MITTE_ORIGIN } from "../geo/berlin-mitte-origin";
+import { localToGeo } from "../geo/coordinates";
+import { getBerlinCameraDensitySampler } from "../heatmaps/camera-density-loader";
 import type { BerlinPlacementDebugSnapshot } from "../placement/types";
 import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
@@ -144,6 +147,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
 
     ctx.font = "16px monospace";
     ctx.fillStyle = "#b9fbc0";
+    const heatmapLines = getHeatmapDebugLines(state);
     const lines = [
       `loading: ${state.isLoading}`,
       `disposed: ${state.isDisposed}`,
@@ -165,6 +169,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
       `placement stale: ${this.placementSnapshot.counters.stalePointsRemoved}`,
       `placement ms: ${this.placementSnapshot.lastUpdateDurationMs.toFixed(2)}`,
       `placement markers: ${this.placementSnapshot.counters.activeDebugMarkerCount}`,
+      ...heatmapLines,
       `cone points: ${this.conePlacementSnapshot.counters.acceptedPoints}`,
       `cone active: ${this.conePlacementSnapshot.counters.activeCones}`,
       `cone pending: ${this.conePlacementSnapshot.counters.pendingPoints}`,
@@ -195,4 +200,30 @@ function createEmptyTilesStats(): TilesRuntimeDebugStats {
     activeTiles: 0,
     trackedMeshes: 0,
   };
+}
+
+function getHeatmapDebugLines(state: BerlinState): readonly string[] {
+  const sampler = getBerlinCameraDensitySampler();
+  if (!sampler) {
+    return ["heatmap: not loaded"];
+  }
+
+  const playerGeoPoint = localToGeo(BERLIN_MITTE_ORIGIN, {
+    x: state.player.rig.position.x,
+    y: state.player.rig.position.y,
+    z: state.player.rig.position.z,
+  });
+  const originSample = sampler.sampleGeoPoint(
+    BERLIN_MITTE_ORIGIN.lat,
+    BERLIN_MITTE_ORIGIN.lon,
+  );
+  const playerSample = sampler.sampleGeoPoint(playerGeoPoint.lat, playerGeoPoint.lon);
+
+  return [
+    `heatmap: loaded ${sampler.imageWidth}x${sampler.imageHeight} ${sampler.imageOrientation}`,
+    `heatmap bounds: N${sampler.bounds.north.toFixed(3)} S${sampler.bounds.south.toFixed(3)} W${sampler.bounds.west.toFixed(3)} E${sampler.bounds.east.toFixed(3)}`,
+    "heatmap map: world -> localToGeo(origin) -> linear lat/lon UV",
+    `heatmap origin uv: ${originSample.uv.u.toFixed(3)}, ${originSample.uv.v.toFixed(3)} density ${originSample.density.toFixed(2)}`,
+    `heatmap player uv: ${playerSample.uv.u.toFixed(3)}, ${playerSample.uv.v.toFixed(3)} density ${playerSample.density.toFixed(2)}`,
+  ];
 }

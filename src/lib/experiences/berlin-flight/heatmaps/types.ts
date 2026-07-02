@@ -27,4 +27,18 @@ export interface BerlinCameraDensitySampler {
   imageWidth: number;
   imageHeight: number;
   sampleDensity(lat: number, lon: number): number;
+  sampleGeoPoint(lat: number, lon: number): BerlinCameraDensitySample;
+}
+
+export interface BerlinHeatmapUv {
+  u: number;
+  v: number;
+  inBounds: boolean;
+}
+
+export interface BerlinCameraDensitySample {
+  density: number;
+  uv: BerlinHeatmapUv;
+  pixelX: number;
+  pixelY: number;
 }
