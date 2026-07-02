@@ -3,6 +3,7 @@ import { BERLIN_CONE_PLACEMENT } from "./config";
 import { BerlinConePlacementDebugMarkers } from "./debug-markers";
 import { sampleBerlinMeshNeighborhood } from "./mesh-neighborhood";
 import { solveBerlinConeAxisDirection } from "./orientation-solver";
+import { createBerlinConeVolume } from "./cone-volume";
 import type {
   BerlinConePlacementDebugSnapshot,
   BerlinConePlacementDebugCounters,
@@ -11,8 +12,6 @@ import type { BerlinConeVolume } from "../collision/types";
 import { BERLIN_CONE_GRID } from "../runtime/cone-grid-config";
 import type { TrackedTileMesh } from "../collision/tile-mesh-types";
 import type { BerlinAcceptedShadowOriginPoint } from "../placement/types";
-
-const scratchBaseCenter = new THREE.Vector3();
 
 export class BerlinConePlacementController {
   private readonly conesByPointId = new Map<string, BerlinConeVolume>();
@@ -100,7 +99,7 @@ export class BerlinConePlacementController {
         continue;
       }
 
-      const nextCone = createConeVolume(point, axisDirection);
+      const nextCone = createBerlinConeVolume(point, axisDirection);
       const previousCone = this.conesByPointId.get(point.pointId);
 
       if (!areConeVolumesEqual(previousCone, nextCone)) {
@@ -221,29 +220,6 @@ export class BerlinConePlacementController {
       this.snapshotVersion += 1;
     }
   }
-}
-
-function createConeVolume(
-  point: BerlinAcceptedShadowOriginPoint,
-  axisDirection: THREE.Vector3,
-): BerlinConeVolume {
-  const tip = point.worldPosition.clone();
-  const baseCenter = scratchBaseCenter
-    .copy(point.worldPosition)
-    .addScaledVector(axisDirection, BERLIN_CONE_GRID.CONE_HEIGHT)
-    .clone();
-
-  return {
-    tip,
-    axisDirection: axisDirection.clone(),
-    height: BERLIN_CONE_GRID.CONE_HEIGHT,
-    radius: BERLIN_CONE_GRID.CONE_RADIUS,
-    baseCenter,
-    placementPointId: point.pointId,
-    sourceBuildingId: point.buildingId,
-    chunkKey: point.sourceKey,
-    coneIndex: point.cornerIndex,
-  };
 }
 
 function createAcceptedPointsSignature(

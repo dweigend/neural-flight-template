@@ -8,6 +8,10 @@ import type {
   BerlinRoofCornerCandidate,
 } from "./types";
 
+export interface BerlinDensitySampler {
+  sampleDensity(lat: number, lon: number): number;
+}
+
 export interface BerlinCornerFilterResult {
   acceptedPoints: readonly BerlinAcceptedShadowOriginPoint[];
   rejectedBySpacing: number;
@@ -22,12 +26,12 @@ const scratchRepresentativePosition = new THREE.Vector3();
  */
 export function applyBerlinCornerCandidateStage(
   candidates: readonly BerlinRoofCornerCandidate[],
+  sampler: BerlinDensitySampler | null = getBerlinCameraDensitySampler(),
 ): readonly BerlinRoofCornerCandidate[] {
   if (candidates.length <= 1) {
     return candidates;
   }
 
-  const sampler = getBerlinCameraDensitySampler();
   if (!sampler) {
     return candidates;
   }
@@ -71,6 +75,7 @@ export function applyBerlinCornerCandidateStage(
 
 export function filterBerlinRoofCornerCandidates(
   candidates: readonly BerlinRoofCornerCandidate[],
+  sampler: BerlinDensitySampler | null = getBerlinCameraDensitySampler(),
 ): BerlinCornerFilterResult {
   if (candidates.length === 0) {
     return {
@@ -79,7 +84,7 @@ export function filterBerlinRoofCornerCandidates(
     };
   }
 
-  const stagedCandidates = applyBerlinCornerCandidateStage(candidates);
+  const stagedCandidates = applyBerlinCornerCandidateStage(candidates, sampler);
   if (stagedCandidates.length === 0) {
     return {
       acceptedPoints: [],
