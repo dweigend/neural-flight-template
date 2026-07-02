@@ -9,12 +9,12 @@ export const BATTERY = {
   totalTimeMs: 50000, // Total experience time in ms (default 5 min=300000)
 
   // ── Colors ──────────────────────────────────────────────────────
-  outlineColor: "#00ffcc", // Battery outline stroke color
+  outlineColor: "#ff44aa", // Battery outline stroke color
   barColor: "#00ffcc", // Fill color of each battery segment
-  flickerColor: "#ff0044", // Last-bar flicker color at 95%+
+  flickerColor: "#ff44aa", // Last-bar flicker color at 95%+
 
   // ── Flicker ─────────────────────────────────────────────────────
-  flickerSpeedMs: 400, // Full on/off cycle duration in ms
+  flickerSpeedMs: 700, // Full on/off cycle duration in ms
 
   // ── Texture ─────────────────────────────────────────────────────
   textureWidth: 120, // Canvas width in pixels

@@ -1,31 +1,75 @@
 import * as THREE from "three";
 
 export const SONAR = {
-  rotationSpeed: 36,
-  dotCount: 28,
-  dotRadius: 3,
-  dotActiveGlowRadius: 14,
-  dotFadeDuration: 1.8,
-  dotActivationThresholdDeg: 4,
-  glowAngleDeg: 60,
-  glowMaxAlpha: 0.3,
-  glowSegments: 40,
-  circleColor: "#00ffcc",
-  lineColor: "#00ffcc",
-  dotColor: "#00ffcc",
-  glowColor: "#00ffcc",
-  crossColor: "#00ffcc",
-  textureWidth: 512,
-  textureHeight: 512,
-  spriteScale: 1.8,
-  distance: 1.8,
-  circleRadiusFraction: 0.42,
-  circleLineWidth: 2.5,
-  crossArmLength: 30,
-  crossGap: 7,
-  crossLineWidth: 1.5,
-  crossTickSize: 7,
+  // ── Canvas (pixel dimensions of the offscreen canvas) ───────────
+  textureWidth: 800, // Canvas width in pixels
+  textureHeight: 800, // Canvas height in pixels
+
+  // ── Sprite (world-space size and distance from camera) ──────────
+  spriteScale: 1.5, // Uniform sprite scale in world units
+  distance: 1.8, // Z-offset from camera (world units)
+
+  // ── Outer Circle ────────────────────────────────────────────────
+  circleRadiusFraction: 0.95, // 0–1 (fraction of half-canvas). 1.0 = touches canvas edge, >1 clips.
+  circleLineWidth: 5.5, // Stroke width of the outer ring (canvas px)
+  // 💡 To make the circle bigger in the scene without clipping: increase spriteScale.
+  //    circleRadiusFraction controls circle-vs-canvas ratio; spriteScale controls world size.
+
+  // ── Sweep Beam (glow trailing behind the scan line) ────────────
+  rotationSpeed: 20, // Scan line rotation speed (degrees / sec)
+  glowAngleDeg: 80, // Angular width of the trailing glow wedge (degrees)
+  glowMaxAlpha: 0.3, // Peak opacity of the glow wedge (0–1)
+  glowSegments: 50, // Radial segments for the glow wedge gradient
+
+  // ── Ambient Dots (activate when the scan line passes over them) ─
+  dotCount: 15, // Number of randomly placed dots
+  dotRadius: 13, // Base dot radius (canvas px)
+  dotActiveGlowRadius: 30, // Outer glow radius when a dot is hit (canvas px)
+  dotFadeDuration: 2.8, // Seconds for a hit dot to fade out completely
+  dotActivationThresholdDeg: 4, // Angular proximity (degrees) that triggers a dot
+
+  // ── Center Crosshair ────────────────────────────────────────────
+  crossArmLength: 320, // Length of each crosshair arm from center (canvas px)
+  crossGap: 30, // Empty gap around the center (canvas px)
+  crossLineWidth: 1.5, // Stroke width of crosshair lines (canvas px)
+
+  // ── Inner Concentric Circles ────────────────────────────────────
+  innerCircles: [
+    { radiusFraction: 0.1, lineWidth: 1, color: "#ff44aa" },
+    { radiusFraction: 0.2, lineWidth: 1, color: "#008866" },
+    { radiusFraction: 0.3, lineWidth: 1, color: "#008866" },
+    { radiusFraction: 0.4, lineWidth: 1, color: "#008866" },
+    { radiusFraction: 0.6, lineWidth: 2.0, color: "#00ffcc" },
+  ] as InnerCircleDef[],
+  // Each entry: radiusFraction (0–1 as % of outer circle), lineWidth (canvas px), color.
+
+  // ── Radial Tick Marks (unified ring, inside the circle) ────────
+  tickCount: 360, // Total number of ticks around the full circle (36 = every 10°)
+  tickInnerRadiusFrac: 0.9, // Inner (center-ward) radius of ticks as fraction of outer circle radius
+  tickMajorInterval: 10, // Every Nth tick is a major tick (3 = every 30°)
+  tickMajor2Interval: 90, // Every Nth tick is the largest major tick (6 = every 60°)
+  tickMinorLength: 12, // Length of minor ticks inward from tickInnerRadius (canvas px)
+  tickMajorLength: 20, // Length of medium ticks (30° marks)
+  tickMajor2Length: 32, // Length of largest ticks (60° marks)
+  tickWidth: 2, // Stroke width of tick marks (canvas px)
+  tickMinorColor: "#008866", // Color of minor tick marks
+  tickMajorColor: "#ff44aa", // Color of medium tick marks
+  tickMajor2Color: "#ff44aa", // Color of largest tick marks
+  tickGlowBlur: 6, // Shadow blur for tick glow (canvas px)
+
+  // ── Colors ─────────────────────────────────────────────────────
+  circleColor: "#ff44aa", // Outer ring stroke color
+  lineColor: "#ff44aa", // Scan line stroke color
+  glowColor: "#ff44aa", // Sweep beam glow color
+  dotColor: "#ff44aa", // Dot fill color (base + glow)
+  crossColor: "#00ffcc", // Crosshair and tick mark stroke color
 };
+
+export interface InnerCircleDef {
+  radiusFraction: number;
+  lineWidth: number;
+  color: string;
+}
 
 interface DotState {
   angle: number;
@@ -132,7 +176,9 @@ export class SonarOverlay {
     ctx.clearRect(0, 0, w, h);
     this._drawGlow(ctx, cx, cy, radius);
     this._drawDots(ctx, cx, cy, radius);
+    this._drawInnerCircles(ctx, cx, cy, radius);
     this._drawCircle(ctx, cx, cy, radius);
+    this._drawTickMarks(ctx, cx, cy, radius);
     this._drawCrosshair(ctx, cx, cy);
     this._drawScanLine(ctx, cx, cy, radius);
     this.texture.needsUpdate = true;
@@ -203,6 +249,26 @@ export class SonarOverlay {
     }
   }
 
+  private _drawInnerCircles(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    outerRadius: number,
+  ): void {
+    for (const c of SONAR.innerCircles) {
+      const r = outerRadius * c.radiusFraction;
+      ctx.save();
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = c.lineWidth;
+      ctx.shadowColor = c.color;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   private _drawCircle(
     ctx: CanvasRenderingContext2D,
     cx: number,
@@ -220,6 +286,49 @@ export class SonarOverlay {
     ctx.restore();
   }
 
+  private _drawTickMarks(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    radius: number,
+  ): void {
+    ctx.save();
+    ctx.lineWidth = SONAR.tickWidth;
+    ctx.shadowBlur = SONAR.tickGlowBlur;
+
+    const count = SONAR.tickCount;
+    const innerRadius = radius * SONAR.tickInnerRadiusFrac;
+    for (let i = 0; i < count; i++) {
+      const a = (i * Math.PI * 2) / count;
+      const isMajor = i % SONAR.tickMajorInterval === 0;
+      const isMajor2 = i % SONAR.tickMajor2Interval === 0;
+      const len = isMajor2
+        ? SONAR.tickMajor2Length
+        : isMajor
+          ? SONAR.tickMajorLength
+          : SONAR.tickMinorLength;
+      const color = isMajor2
+        ? SONAR.tickMajor2Color
+        : isMajor
+          ? SONAR.tickMajorColor
+          : SONAR.tickMinorColor;
+
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+
+      const x1 = cx + Math.cos(a) * innerRadius;
+      const y1 = cy + Math.sin(a) * innerRadius;
+      const x2 = cx + Math.cos(a) * (innerRadius + len);
+      const y2 = cy + Math.sin(a) * (innerRadius + len);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
   private _drawCrosshair(
     ctx: CanvasRenderingContext2D,
     cx: number,
@@ -227,7 +336,6 @@ export class SonarOverlay {
   ): void {
     const arm = SONAR.crossArmLength;
     const gap = SONAR.crossGap;
-    const tick = SONAR.crossTickSize;
     const lw = SONAR.crossLineWidth;
 
     ctx.save();
@@ -246,21 +354,6 @@ export class SonarOverlay {
     ctx.moveTo(cx, cy + gap);
     ctx.lineTo(cx, cy + arm);
     ctx.stroke();
-
-    ctx.shadowBlur = 0;
-    for (let i = 0; i < 12; i++) {
-      const a = (i * Math.PI) / 6;
-      const innerR = i % 3 === 0 ? arm + 5 : arm + 3;
-      const outerR = innerR + (i % 3 === 0 ? tick * 1.2 : tick * 0.7);
-      const x1 = cx + Math.cos(a) * innerR;
-      const y1 = cy + Math.sin(a) * innerR;
-      const x2 = cx + Math.cos(a) * outerR;
-      const y2 = cy + Math.sin(a) * outerR;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-    }
 
     ctx.restore();
   }
