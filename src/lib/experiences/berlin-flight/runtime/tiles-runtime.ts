@@ -34,7 +34,6 @@ type TileDisposeEvent = {
 const BERLIN_TILE_RUNTIME_TUNING = {
   errorTarget: 20,
   loadSiblings: false,
-  loadAncestors: true,
   maxTilesProcessed: 96,
   downloadJobs: 8,
   parseJobs: 2,
@@ -82,7 +81,6 @@ export class TilesRuntimeAdapter {
     signal?: AbortSignal,
   ): Promise<TilesRenderer> {
     this.assertCanLoad(signal);
-    this.assertHasTilesUrl();
 
     let renderer: TilesRenderer | null = null;
 
@@ -101,7 +99,15 @@ export class TilesRuntimeAdapter {
       console.log("[BerlinFlight] 3D Tiles renderer initialized.");
       return renderer;
     } catch (error) {
-      this.cleanupFailedRenderer(renderer);
+      if (renderer) {
+        renderer.removeEventListener("load-model", this.handleLoadModel);
+        renderer.removeEventListener("dispose-model", this.handleDisposeModel);
+        renderer.dispose();
+      }
+
+      this.meshRegistry.dispose();
+      this.activeCamera = null;
+      this.renderer = null;
 
       console.error(
         "[BerlinFlight] Failed to initialize 3D Tiles renderer:",
@@ -121,12 +127,6 @@ export class TilesRuntimeAdapter {
     }
   }
 
-  private assertHasTilesUrl(): void {
-    if (!this.url) {
-      throw new Error("[BerlinFlight] Cannot load tiles: URL is null or empty");
-    }
-  }
-
   private configureRenderer(renderer: TilesRenderer): void {
     const isGoogleTiles = this.registerGoogleTilesPlugin(renderer);
 
@@ -138,7 +138,6 @@ export class TilesRuntimeAdapter {
 
     renderer.errorTarget = BERLIN_TILE_RUNTIME_TUNING.errorTarget;
     renderer.loadSiblings = BERLIN_TILE_RUNTIME_TUNING.loadSiblings;
-    renderer.loadAncestors = BERLIN_TILE_RUNTIME_TUNING.loadAncestors;
     renderer.maxTilesProcessed = BERLIN_TILE_RUNTIME_TUNING.maxTilesProcessed;
     renderer.downloadQueue.maxJobs = BERLIN_TILE_RUNTIME_TUNING.downloadJobs;
     renderer.parseQueue.maxJobs = BERLIN_TILE_RUNTIME_TUNING.parseJobs;
@@ -153,18 +152,6 @@ export class TilesRuntimeAdapter {
     renderer.lruCache.unloadPercent = BERLIN_TILE_RUNTIME_TUNING.unloadPercent;
     renderer.addEventListener("load-model", this.handleLoadModel);
     renderer.addEventListener("dispose-model", this.handleDisposeModel);
-  }
-
-  private cleanupFailedRenderer(renderer: TilesRenderer | null): void {
-    if (renderer) {
-      renderer.removeEventListener("load-model", this.handleLoadModel);
-      renderer.removeEventListener("dispose-model", this.handleDisposeModel);
-      renderer.dispose();
-    }
-
-    this.meshRegistry.dispose();
-    this.activeCamera = null;
-    this.renderer = null;
   }
 
   private registerGoogleTilesPlugin(renderer: TilesRenderer): boolean {

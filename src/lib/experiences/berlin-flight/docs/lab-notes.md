@@ -167,9 +167,10 @@ Every runtime helper created in later phases should expose explicit cleanup:
 - `runtime/tiles-runtime.ts` owns `3d-tiles-renderer`, Google tile auth plugin setup, visibility, debug stats, and idempotent disposal.
 - Async tile setup is guarded with an `AbortController`; disposed experiences should not attach late tile content.
 - The debug overlay is opt-in, lazy-created, throttled, and disposed when disabled or when the experience unloads.
+- *Update Phase 9:* Berlin now uses a stricter local tile-runtime profile for the existing WebGL path: `errorTarget` increased from `12` to `20`, sibling prefetch disabled, traversal work capped more tightly, and the tile cache/queue budgets reduced inside `runtime/tiles-runtime.ts` only. One retained non-obvious choice is `loadSiblings = false`: the renderer defaults to sibling prefetch, but Berlin’s current Quest-oriented path keeps it off so fast flight spends less bandwidth and memory on adjacent building tiles that the user is unlikely to inspect before the next camera update.
 
 ### Known limitations
-- Tile LOD, cache size, and error target are still first-pass values and need headset profiling.
+- Tile LOD, cache size, and error target are still local first-pass Quest-oriented values and need headset profiling.
 - The reference grid is useful for smoke testing but may not belong in the final VR presentation.
 - Flight physics are connected, but collision, height constraints, and city-scale navigation tuning are not solved.
 - Attribution display for Google/Cesium content is not yet surfaced in the user-facing VR UI.
