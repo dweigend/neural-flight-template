@@ -7,6 +7,7 @@ import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
 import {
   BERLIN_ALTITUDE_SPEED,
   BERLIN_FLIGHT_BASE_SPEED,
+  BERLIN_TILE_PRELOAD,
 } from "./constants";
 import { disposeObjectTree } from "./runtime/cleanup";
 import { BerlinConeGridRuntime } from "./runtime/cone-grid-runtime";
@@ -25,6 +26,7 @@ const TILE_SELECTION_FOV = 110;
 const scratchPosition = new THREE.Vector3();
 const scratchQuaternion = new THREE.Quaternion();
 const scratchScale = new THREE.Vector3();
+const scratchForward = new THREE.Vector3();
 
 function createBerlinFillLights(): {
   directional: THREE.DirectionalLight;
@@ -80,7 +82,14 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     player.camera.near,
     player.camera.far,
   );
+  const tilePreloadCamera = new THREE.PerspectiveCamera(
+    Math.max(player.camera.fov, BERLIN_TILE_PRELOAD.FOV),
+    player.camera.aspect || 1,
+    player.camera.near,
+    player.camera.far,
+  );
   tileSelectionCamera.updateProjectionMatrix();
+  tilePreloadCamera.updateProjectionMatrix();
 
   // Initial state
   const state: BerlinState = {
@@ -95,6 +104,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     renderer: ctx.renderer,
     camera: player.camera,
     tileSelectionCamera,
+    tilePreloadCamera,
     player,
     targetSpeed: BERLIN_FLIGHT_BASE_SPEED,
     isLoading: true,
@@ -134,8 +144,10 @@ export function tick(state: BerlinState, ctx: TickContext) {
     const xrSession = s.renderer.xr.getSession();
     Scheduler.setXRSession(xrSession as XRSession);
 
-    syncTileSelectionCamera(s);
-    s.tilesRuntime.update(s.tileSelectionCamera, s.renderer);
+    syncTileSelectionCameras(s);
+    // ponytail: preload camera stays disabled until tile budgets are retuned for it;
+    // it competes with the visible camera for refinement work.
+    s.tilesRuntime.update([s.tileSelectionCamera], s.renderer);
     s.placementController.update(
       s.player.rig.position,
       s.tilesRuntime.getTrackedTileMeshes(),
@@ -195,9 +207,8 @@ async function loadTilesWhenConfigured(state: BerlinState): Promise<void> {
   }
 }
 
-function syncTileSelectionCamera(state: BerlinState): void {
+function syncTileSelectionCameras(state: BerlinState): void {
   const viewCamera = getTileSelectionViewCamera(state);
-  const tileSelectionCamera = state.tileSelectionCamera;
 
   viewCamera.matrixWorld.decompose(
     scratchPosition,
@@ -205,25 +216,53 @@ function syncTileSelectionCamera(state: BerlinState): void {
     scratchScale,
   );
 
-  tileSelectionCamera.position.copy(scratchPosition);
-  tileSelectionCamera.quaternion.copy(scratchQuaternion);
+  syncTileSelectionCamera(
+    state.tileSelectionCamera,
+    scratchPosition,
+    scratchQuaternion,
+    Math.max(state.camera.fov, TILE_SELECTION_FOV),
+    state,
+  );
 
-  const nextFov = Math.max(state.camera.fov, TILE_SELECTION_FOV);
+  scratchForward.set(0, 0, -1).applyQuaternion(scratchQuaternion).normalize();
+  scratchPosition.addScaledVector(
+    scratchForward,
+    BERLIN_TILE_PRELOAD.AHEAD_DISTANCE,
+  );
+  syncTileSelectionCamera(
+    state.tilePreloadCamera,
+    scratchPosition,
+    scratchQuaternion,
+    Math.max(state.camera.fov, BERLIN_TILE_PRELOAD.FOV),
+    state,
+  );
+}
+
+function syncTileSelectionCamera(
+  camera: THREE.PerspectiveCamera,
+  position: THREE.Vector3,
+  quaternion: THREE.Quaternion,
+  fov: number,
+  state: BerlinState,
+): void {
+  camera.position.copy(position);
+  camera.quaternion.copy(quaternion);
+
   const nextAspect = state.camera.aspect || 1;
   if (
-    tileSelectionCamera.near !== state.camera.near ||
-    tileSelectionCamera.far !== state.camera.far ||
-    tileSelectionCamera.fov !== nextFov ||
-    tileSelectionCamera.aspect !== nextAspect
+    camera.near !== state.camera.near ||
+    camera.far !== state.camera.far ||
+    camera.fov !== fov ||
+    camera.aspect !== nextAspect
   ) {
-    tileSelectionCamera.near = state.camera.near;
-    tileSelectionCamera.far = state.camera.far;
-    tileSelectionCamera.fov = nextFov;
-    tileSelectionCamera.aspect = nextAspect;
-    tileSelectionCamera.updateProjectionMatrix();
+    camera.near = state.camera.near;
+    camera.far = state.camera.far;
+    camera.fov = fov;
+    camera.aspect = nextAspect;
+    camera.updateProjectionMatrix();
   }
 
-  tileSelectionCamera.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
 }
 
 function getTileSelectionViewCamera(state: BerlinState): THREE.Camera {

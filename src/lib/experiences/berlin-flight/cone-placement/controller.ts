@@ -50,11 +50,18 @@ export class BerlinConePlacementController {
 
     this.syncAcceptedPoints(acceptedPoints);
 
-    if (pointsChanged || meshesChanged) {
+    if (pointsChanged) {
       this.pendingPointIds = acceptedPoints.map((point) => point.pointId);
       this.lastAcceptedPointsSignature = acceptedPointsSignature;
-      this.trackedMeshVersion = trackedMeshVersion;
+    } else if (meshesChanged) {
+      this.pendingPointIds = mergePendingPointIds(
+        this.pendingPointIds,
+        acceptedPoints.filter(
+          (point) => !this.conesByPointId.has(point.pointId),
+        ),
+      );
     }
+    this.trackedMeshVersion = trackedMeshVersion;
 
     let processedPoints = 0;
     let skippedMissingNeighborhood = 0;
@@ -258,6 +265,25 @@ function createAcceptedPointSignature(
 
 function quantize(value: number): string {
   return Math.round(value * 100).toString();
+}
+
+function mergePendingPointIds(
+  pendingPointIds: readonly string[],
+  acceptedPoints: readonly BerlinAcceptedShadowOriginPoint[],
+): string[] {
+  const pendingPointIdSet = new Set(pendingPointIds);
+  const mergedPointIds = [...pendingPointIds];
+
+  for (const point of acceptedPoints) {
+    if (pendingPointIdSet.has(point.pointId)) {
+      continue;
+    }
+
+    mergedPointIds.push(point.pointId);
+    pendingPointIdSet.add(point.pointId);
+  }
+
+  return mergedPointIds;
 }
 
 function compareConeVolumes(

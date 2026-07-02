@@ -72,3 +72,32 @@ test("BerlinConePlacementController caches active cones and prunes removed point
 
   expect(controller.getActiveCones()).toHaveLength(0);
 });
+
+test("BerlinConePlacementController keeps unresolved points queued across mesh version changes", () => {
+  const controller = new BerlinConePlacementController();
+  const trackedMesh = createTrackedMesh([
+    4,
+    19,
+    0,
+    7,
+    19,
+    0,
+    9,
+    19,
+    0,
+    0,
+    28,
+    0,
+  ]);
+  const points = Array.from({ length: 100 }, (_, index) =>
+    createAcceptedPoint(`point-${index}`, 0, 20, 0),
+  );
+
+  controller.update(points, [trackedMesh], 1);
+  expect(controller.getActiveCones()).toHaveLength(96);
+  expect(controller.getSnapshot().counters.pendingPoints).toBe(4);
+
+  controller.update(points, [trackedMesh], 2);
+  expect(controller.getActiveCones()).toHaveLength(100);
+  expect(controller.getSnapshot().counters.pendingPoints).toBe(0);
+});

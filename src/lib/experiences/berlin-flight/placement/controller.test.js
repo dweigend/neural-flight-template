@@ -58,3 +58,21 @@ test("BerlinPlacementController updates incrementally and prunes out-of-range bu
     true,
   );
 });
+
+test("BerlinPlacementController keeps pending building work when new tile meshes arrive", () => {
+  const controller = new BerlinPlacementController();
+  const playerPosition = new THREE.Vector3(0, 0, 0);
+  const meshes = [];
+
+  for (let index = 0; index < 30; index += 1) {
+    const x = (index % 6) * 40;
+    const z = Math.floor(index / 6) * 40;
+    meshes.push(createTrackedMesh(`mesh-${index}`, x, 0, z));
+  }
+
+  controller.update(playerPosition, meshes, 1);
+  expect(controller.getAcceptedPoints()).toHaveLength(24);
+
+  controller.update(playerPosition, meshes, 2);
+  expect(controller.getAcceptedPoints()).toHaveLength(30);
+});

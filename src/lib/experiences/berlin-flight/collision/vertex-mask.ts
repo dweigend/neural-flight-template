@@ -28,9 +28,15 @@ export function updateVertexMask(
 }
 
 function updateTrackedMeshWorldPositions(mesh: TrackedTileMesh): void {
-  if (mesh.cachedVertexWorldMatrix.equals(mesh.mesh.matrixWorld)) return;
+  if (
+    mesh.worldPositionsInitialized &&
+    mesh.cachedVertexWorldMatrix.equals(mesh.mesh.matrixWorld)
+  ) {
+    return;
+  }
 
   mesh.cachedVertexWorldMatrix.copy(mesh.mesh.matrixWorld);
+  mesh.worldPositionsInitialized = true;
 
   for (let vertexIndex = 0; vertexIndex < mesh.vertexCount; vertexIndex += 1) {
     const offset = vertexIndex * 3;

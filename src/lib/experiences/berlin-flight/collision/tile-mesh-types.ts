@@ -11,6 +11,7 @@ export interface TrackedTileMesh {
   geometry: THREE.BufferGeometry;
   positions: Float32Array;
   worldPositions: Float32Array;
+  worldPositionsInitialized: boolean;
   vertexCount: number;
   vertexMask: Uint8Array;
   coneMaskAttribute: THREE.BufferAttribute | null;

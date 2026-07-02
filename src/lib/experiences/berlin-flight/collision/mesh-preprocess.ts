@@ -17,14 +17,17 @@ export function preprocessTrackedMesh(
     return null;
   }
 
-  const positions = new Float32Array(positionAttribute.array);
+  const positions = getPositions(positionAttribute.array);
+  if (!positions) {
+    return null;
+  }
+
   const worldPositions = new Float32Array(positions.length);
   const vertexCount = positionAttribute.count;
   const coneMaskAttribute = geometry.getAttribute("coneMask");
 
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  copyWorldPositions(positions, worldPositions, vertexCount, mesh.matrixWorld);
 
   return {
     sourceUrl: "",
@@ -32,6 +35,7 @@ export function preprocessTrackedMesh(
     geometry,
     positions,
     worldPositions,
+    worldPositionsInitialized: false,
     vertexCount,
     vertexMask: new Uint8Array(vertexCount),
     coneMaskAttribute:
@@ -48,18 +52,14 @@ export function preprocessTrackedMesh(
   };
 }
 
-function copyWorldPositions(
-  positions: Float32Array,
-  worldPositions: Float32Array,
-  vertexCount: number,
-  matrixWorld: THREE.Matrix4,
-): void {
-  const scratchPosition = new THREE.Vector3();
-
-  for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
-    const offset = vertexIndex * 3;
-    scratchPosition.fromArray(positions, offset);
-    scratchPosition.applyMatrix4(matrixWorld);
-    scratchPosition.toArray(worldPositions, offset);
+function getPositions(array: THREE.TypedArray): Float32Array | null {
+  if (array instanceof Float32Array) {
+    return array;
   }
+
+  if (ArrayBuffer.isView(array)) {
+    return Float32Array.from(array);
+  }
+
+  return null;
 }

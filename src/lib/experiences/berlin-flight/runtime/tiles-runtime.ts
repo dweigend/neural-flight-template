@@ -4,6 +4,7 @@ import * as THREE from "three";
 import type { Camera, Group, WebGLRenderer } from "three";
 import { BerlinTileMeshRegistry } from "../collision/mesh-tracker";
 import type { TrackedTileMesh } from "../collision/tile-mesh-types";
+import { BERLIN_TILE_RUNTIME } from "../constants";
 import { BERLIN_MITTE_ORIGIN } from "../geo/berlin-mitte-origin";
 import { getECEFToLocalMatrix } from "../geo/coordinates";
 import type { BerlinTilesSource } from "./tiles-source";
@@ -31,28 +32,15 @@ type TileDisposeEvent = {
   type: "dispose-model";
 };
 
-const BERLIN_TILE_RUNTIME_TUNING = {
-  errorTarget: 20,
-  loadSiblings: false,
-  maxTilesProcessed: 96,
-  downloadJobs: 8,
-  parseJobs: 2,
-  processNodeJobs: 8,
-  minCacheItems: 128,
-  maxCacheItems: 256,
-  minCacheBytes: 64 * 1024 * 1024,
-  maxCacheBytes: 128 * 1024 * 1024,
-  unloadPercent: 0.2,
-} as const;
-
 /**
  * Adapter for the 3D Tiles runtime.
  * This isolates the specific loader (3d-tiles-renderer) from the experience logic.
  */
 export class TilesRuntimeAdapter {
   private renderer: TilesRenderer | null = null;
-  private activeCamera: Camera | null = null;
+  private activeCameras: Camera[] = [];
   private readonly meshRegistry = new BerlinTileMeshRegistry();
+  private readonly resolution = new THREE.Vector2();
   private readonly url: string;
   private readonly token: string;
   private disposed = false;
@@ -106,7 +94,7 @@ export class TilesRuntimeAdapter {
       }
 
       this.meshRegistry.dispose();
-      this.activeCamera = null;
+      this.activeCameras = [];
       this.renderer = null;
 
       console.error(
@@ -136,20 +124,11 @@ export class TilesRuntimeAdapter {
       };
     }
 
-    renderer.errorTarget = BERLIN_TILE_RUNTIME_TUNING.errorTarget;
-    renderer.loadSiblings = BERLIN_TILE_RUNTIME_TUNING.loadSiblings;
-    renderer.maxTilesProcessed = BERLIN_TILE_RUNTIME_TUNING.maxTilesProcessed;
-    renderer.downloadQueue.maxJobs = BERLIN_TILE_RUNTIME_TUNING.downloadJobs;
-    renderer.parseQueue.maxJobs = BERLIN_TILE_RUNTIME_TUNING.parseJobs;
-    renderer.processNodeQueue.maxJobs =
-      BERLIN_TILE_RUNTIME_TUNING.processNodeJobs;
-    renderer.lruCache.minSize = BERLIN_TILE_RUNTIME_TUNING.minCacheItems;
-    renderer.lruCache.maxSize = BERLIN_TILE_RUNTIME_TUNING.maxCacheItems;
-    renderer.lruCache.minBytesSize =
-      BERLIN_TILE_RUNTIME_TUNING.minCacheBytes;
-    renderer.lruCache.maxBytesSize =
-      BERLIN_TILE_RUNTIME_TUNING.maxCacheBytes;
-    renderer.lruCache.unloadPercent = BERLIN_TILE_RUNTIME_TUNING.unloadPercent;
+    renderer.errorTarget = 20;
+    renderer.downloadQueue.maxJobs = BERLIN_TILE_RUNTIME.DOWNLOAD_JOBS;
+    renderer.parseQueue.maxJobs = BERLIN_TILE_RUNTIME.PARSE_JOBS;
+    renderer.processNodeQueue.maxJobs = BERLIN_TILE_RUNTIME.PROCESS_NODE_JOBS;
+    renderer.maxTilesProcessed = BERLIN_TILE_RUNTIME.MAX_TILES_PROCESSED;
     renderer.addEventListener("load-model", this.handleLoadModel);
     renderer.addEventListener("dispose-model", this.handleDisposeModel);
   }
@@ -184,28 +163,48 @@ export class TilesRuntimeAdapter {
    * Updates the tileset every frame.
    */
   // fallow-ignore-next-line unused-class-member
-  public update(camera: Camera, webglRenderer: WebGLRenderer): void {
+  public update(
+    cameras: readonly Camera[],
+    webglRenderer: WebGLRenderer,
+  ): void {
     const renderer = this.getVisibleRenderer();
     if (!renderer) return;
 
     renderer.group.updateMatrixWorld(true);
-    this.syncCamera(renderer, camera, webglRenderer);
+    this.syncCameras(renderer, cameras, webglRenderer);
     renderer.update();
   }
 
-  private syncCamera(
+  private syncCameras(
     renderer: TilesRenderer,
-    camera: Camera,
+    cameras: readonly Camera[],
     webglRenderer: WebGLRenderer,
   ): void {
-    if (this.activeCamera && this.activeCamera !== camera) {
-      renderer.deleteCamera(this.activeCamera);
+    const nextCameras = cameras.filter(
+      (camera, index) => cameras.indexOf(camera) === index,
+    );
+
+    for (const camera of this.activeCameras) {
+      if (nextCameras.includes(camera)) {
+        continue;
+      }
+
+      renderer.deleteCamera(camera);
     }
 
-    camera.updateMatrixWorld(true);
-    renderer.setCamera(camera);
-    renderer.setResolutionFromRenderer(camera, webglRenderer);
-    this.activeCamera = camera;
+    for (const camera of nextCameras) {
+      camera.updateMatrixWorld(true);
+      if (!renderer.hasCamera(camera)) {
+        renderer.setCamera(camera);
+      }
+    }
+
+    webglRenderer.getSize(this.resolution);
+    for (const camera of nextCameras) {
+      renderer.setResolution(camera, this.resolution);
+    }
+
+    this.activeCameras = [...nextCameras];
   }
 
   // fallow-ignore-next-line unused-class-member
@@ -264,12 +263,12 @@ export class TilesRuntimeAdapter {
 
     if (!this.renderer) {
       this.meshRegistry.dispose();
-      this.activeCamera = null;
+      this.activeCameras = [];
       return;
     }
 
-    if (this.activeCamera) {
-      this.renderer.deleteCamera(this.activeCamera);
+    for (const camera of this.activeCameras) {
+      this.renderer.deleteCamera(camera);
     }
 
     this.renderer.group.removeFromParent();
@@ -278,7 +277,7 @@ export class TilesRuntimeAdapter {
     this.meshRegistry.dispose();
     this.renderer.dispose();
     this.renderer = null;
-    this.activeCamera = null;
+    this.activeCameras = [];
   }
 }
 

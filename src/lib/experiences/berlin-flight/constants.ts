@@ -24,6 +24,18 @@ export const BERLIN_COLLISION = {
   MAX_MESHES_PER_TICK: 8,
 } as const;
 
+export const BERLIN_TILE_PRELOAD = {
+  FOV: 130,
+  AHEAD_DISTANCE: 420,
+} as const;
+
+export const BERLIN_TILE_RUNTIME = {
+  DOWNLOAD_JOBS: 8,
+  PARSE_JOBS: 2,
+  PROCESS_NODE_JOBS: 8,
+  MAX_TILES_PROCESSED: 48,
+} as const;
+
 export const BERLIN_TILE_LOOK = {
   NEUTRAL_COLOR: 0xbeeeef,
   ROUGHNESS: 0.7,

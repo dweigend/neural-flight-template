@@ -6,7 +6,7 @@ import {
 } from "../runtime/tiles-material";
 import type { BerlinTileMesh, TrackedTileMesh } from "./tile-mesh-types";
 import { preprocessTrackedMesh } from "./mesh-preprocess";
-import { writeConeMaskAttributeForMesh } from "./vertex-color-writer";
+import { initializeConeMaskAttributeForMesh } from "./vertex-color-writer";
 
 export class BerlinTileMeshRegistry {
   private readonly trackedByScene = new Map<THREE.Object3D, readonly TrackedTileMesh[]>();
@@ -89,7 +89,7 @@ function createTrackedMesh(
   const trackedMesh = preprocessTrackedMesh(mesh, collisionMaterial);
 
   if (trackedMesh) {
-    writeConeMaskAttributeForMesh(trackedMesh);
+    initializeConeMaskAttributeForMesh(trackedMesh);
     trackedMesh.sourceUrl = sourceUrl;
     trackedMesh.mesh.material = collisionMaterial;
     return trackedMesh;

@@ -25,6 +25,7 @@ export class BerlinConeGridRuntime {
 
   constructor() {
     this.root.name = "BerlinConeGridRoot";
+    this.root.visible = false;
     this.coneGeometry = new THREE.ConeGeometry(
       BERLIN_CONE_GRID.CONE_RADIUS,
       BERLIN_CONE_GRID.CONE_HEIGHT,

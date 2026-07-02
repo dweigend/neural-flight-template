@@ -6,6 +6,10 @@ export function writeConeMaskAttributeForMesh(mesh: TrackedTileMesh): void {
   writeConeMask(mesh);
 }
 
+export function initializeConeMaskAttributeForMesh(mesh: TrackedTileMesh): void {
+  ensureConeMaskAttribute(mesh);
+}
+
 function ensureConeMaskAttribute(mesh: TrackedTileMesh): void {
   const existingMaskAttribute = mesh.geometry.getAttribute("coneMask");
   if (isWritableMaskAttribute(existingMaskAttribute, mesh.vertexCount)) {

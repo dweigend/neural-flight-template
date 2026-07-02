@@ -27,14 +27,19 @@ export class BerlinPlacementController {
     trackedMeshVersion: number,
   ): void {
     const startedAt = performance.now();
-
-    if (shouldRescanSources(
+    const playerMoved = shouldRescanForMovement(
       this.lastPlayerPosition,
       playerPosition,
-      this.trackedMeshVersion,
-      trackedMeshVersion,
-    )) {
-      this.rebuildPendingSources(playerPosition, trackedMeshes, trackedMeshVersion);
+    );
+    const meshesChanged = this.trackedMeshVersion !== trackedMeshVersion;
+
+    if (playerMoved || meshesChanged) {
+      this.rebuildPendingSources(
+        playerPosition,
+        trackedMeshes,
+        trackedMeshVersion,
+        playerMoved,
+      );
     }
 
     if (this.nextSourceIndex < this.pendingSources.length) {
@@ -100,16 +105,23 @@ export class BerlinPlacementController {
     playerPosition: THREE.Vector3,
     trackedMeshes: readonly TrackedTileMesh[],
     trackedMeshVersion: number,
+    resetQueue: boolean,
   ): void {
-    this.pendingSources = collectNearbyBerlinBuildingSources(
+    const nearbySources = collectNearbyBerlinBuildingSources(
       trackedMeshes,
       playerPosition,
     );
+    this.pendingSources = resetQueue
+      ? nearbySources
+      : mergePendingSources(
+          this.pendingSources.slice(this.nextSourceIndex),
+          nearbySources,
+        );
     this.nextSourceIndex = 0;
     this.trackedMeshVersion = trackedMeshVersion;
     this.lastPlayerPosition.copy(playerPosition);
     this.registry.pruneToBuildings(
-      this.pendingSources.map((source) => source.buildingId),
+      nearbySources.map((source) => source.buildingId),
     );
   }
 
@@ -136,16 +148,10 @@ export class BerlinPlacementController {
   }
 }
 
-function shouldRescanSources(
+function shouldRescanForMovement(
   lastPlayerPosition: THREE.Vector3,
   playerPosition: THREE.Vector3,
-  previousVersion: number,
-  nextVersion: number,
 ): boolean {
-  if (previousVersion !== nextVersion) {
-    return true;
-  }
-
   if (Number.isNaN(lastPlayerPosition.x)) {
     return true;
   }
@@ -155,4 +161,36 @@ function shouldRescanSources(
     BERLIN_PLACEMENT.RECOMPUTE_MOVEMENT_THRESHOLD *
       BERLIN_PLACEMENT.RECOMPUTE_MOVEMENT_THRESHOLD
   );
+}
+
+function mergePendingSources(
+  pendingSources: readonly BerlinPlacementBuildingSource[],
+  nearbySources: readonly BerlinPlacementBuildingSource[],
+): readonly BerlinPlacementBuildingSource[] {
+  const nearbyByBuildingId = new Map<string, BerlinPlacementBuildingSource>();
+  const mergedSources: BerlinPlacementBuildingSource[] = [];
+
+  for (const source of nearbySources) {
+    nearbyByBuildingId.set(source.buildingId, source);
+  }
+
+  for (const source of pendingSources) {
+    const nextSource = nearbyByBuildingId.get(source.buildingId);
+    if (!nextSource) {
+      continue;
+    }
+
+    mergedSources.push(nextSource);
+    nearbyByBuildingId.delete(source.buildingId);
+  }
+
+  for (const source of nearbySources) {
+    if (!nearbyByBuildingId.has(source.buildingId)) {
+      continue;
+    }
+
+    mergedSources.push(source);
+  }
+
+  return mergedSources;
 }

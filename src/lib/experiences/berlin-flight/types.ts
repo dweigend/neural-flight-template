@@ -37,6 +37,8 @@ export interface BerlinState extends ExperienceState {
   camera: THREE.PerspectiveCamera;
   /** Loader camera centered on the player rig for tile selection */
   tileSelectionCamera: THREE.PerspectiveCamera;
+  /** Hidden loader camera placed ahead of flight direction to preload upcoming tiles */
+  tilePreloadCamera: THREE.PerspectiveCamera;
   /** The flight player controller */
   player: FlightPlayer;
   /** Target flight speed */
