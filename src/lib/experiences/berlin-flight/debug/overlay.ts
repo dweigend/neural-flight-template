@@ -5,11 +5,7 @@ import {
   BERLIN_DEBUG_OVERLAY_WIDTH,
 } from "./config";
 import type { BerlinCollisionDebugStats } from "../collision/controller";
-import type { BerlinConePlacementDebugSnapshot } from "../cone-placement/types";
-import { BERLIN_MITTE_ORIGIN } from "../geo/berlin-mitte-origin";
-import { localToGeo } from "../geo/coordinates";
-import { getBerlinCameraDensitySampler } from "../heatmaps/camera-density-loader";
-import type { BerlinPlacementDebugSnapshot } from "../placement/types";
+import type { BerlinConeRuntimeDebugStats } from "../runtime/cone-grid-runtime";
 import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
 
@@ -50,30 +46,12 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     processedMeshesLastTick: 0,
     verticesTestedLastTick: 0,
   };
-  private placementSnapshot: BerlinPlacementDebugSnapshot = {
-    counters: {
-      scannedBuildings: 0,
-      scannedCandidates: 0,
-      acceptedPoints: 0,
-      rejectedBySpacing: 0,
-      stalePointsRemoved: 0,
-      activeDebugMarkerCount: 0,
-    },
-    lastUpdateDurationMs: 0,
-    acceptedPoints: [],
-  };
-  private conePlacementSnapshot: BerlinConePlacementDebugSnapshot = {
-    counters: {
-      acceptedPoints: 0,
-      activeCones: 0,
-      pendingPoints: 0,
-      processedPoints: 0,
-      skippedMissingNeighborhood: 0,
-      skippedAmbiguousDirection: 0,
-      activeDebugMarkerCount: 0,
-    },
-    lastUpdateDurationMs: 0,
-    activeCones: [],
+  private coneRuntimeStats: BerlinConeRuntimeDebugStats = {
+    activeChunkCount: 0,
+    activeCones: 0,
+    hasLoadError: false,
+    loadedChunkCount: 0,
+    loading: false,
   };
 
   private disposed = false;
@@ -119,8 +97,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
     this.nextUpdate = elapsed + BERLIN_DEBUG_OVERLAY_UPDATE_SECONDS;
     this.tilesStats = state.tilesRuntime?.getDebugStats() ?? createEmptyTilesStats();
     state.collisionController.writeDebugStats(this.collisionStats);
-    this.placementSnapshot = state.placementController.getSnapshot();
-    this.conePlacementSnapshot = state.conePlacementController.getSnapshot();
+    this.coneRuntimeStats = state.coneRuntime.getDebugStats();
 
     this.draw(state);
     this.texture.needsUpdate = true;
@@ -147,11 +124,14 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
 
     ctx.font = "16px monospace";
     ctx.fillStyle = "#b9fbc0";
-    const heatmapLines = getHeatmapDebugLines(state);
     const lines = [
       `loading: ${state.isLoading}`,
       `disposed: ${state.isDisposed}`,
       `speed: ${state.player.velocity.toFixed(1)} m/s`,
+      `cone loading: ${this.coneRuntimeStats.loading}`,
+      `cone load error: ${this.coneRuntimeStats.hasLoadError}`,
+      `cone chunks active: ${this.coneRuntimeStats.activeChunkCount}`,
+      `cone chunks loaded: ${this.coneRuntimeStats.loadedChunkCount}`,
       `tiles renderer: ${this.tilesStats.hasRenderer}`,
       `tiles visible: ${this.tilesStats.isVisible}`,
       `load progress: ${this.tilesStats.loadProgress.toFixed(2)}`,
@@ -162,22 +142,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
       `dirty meshes: ${this.collisionStats.dirtyMeshes}`,
       `meshes/tick: ${this.collisionStats.processedMeshesLastTick}`,
       `vertices/tick: ${this.collisionStats.verticesTestedLastTick}`,
-      `placement buildings: ${this.placementSnapshot.counters.scannedBuildings}`,
-      `placement candidates: ${this.placementSnapshot.counters.scannedCandidates}`,
-      `placement accepted: ${this.placementSnapshot.counters.acceptedPoints}`,
-      `spacing rejects: ${this.placementSnapshot.counters.rejectedBySpacing}`,
-      `placement stale: ${this.placementSnapshot.counters.stalePointsRemoved}`,
-      `placement ms: ${this.placementSnapshot.lastUpdateDurationMs.toFixed(2)}`,
-      `placement markers: ${this.placementSnapshot.counters.activeDebugMarkerCount}`,
-      ...heatmapLines,
-      `cone points: ${this.conePlacementSnapshot.counters.acceptedPoints}`,
-      `cone active: ${this.conePlacementSnapshot.counters.activeCones}`,
-      `cone pending: ${this.conePlacementSnapshot.counters.pendingPoints}`,
-      `cone processed: ${this.conePlacementSnapshot.counters.processedPoints}`,
-      `cone skip none: ${this.conePlacementSnapshot.counters.skippedMissingNeighborhood}`,
-      `cone skip ambig: ${this.conePlacementSnapshot.counters.skippedAmbiguousDirection}`,
-      `cone ms: ${this.conePlacementSnapshot.lastUpdateDurationMs.toFixed(2)}`,
-      `cone markers: ${this.conePlacementSnapshot.counters.activeDebugMarkerCount}`,
+      `cone runtime active: ${this.coneRuntimeStats.activeCones}`,
     ];
 
     for (let index = 0; index < lines.length; index += 1) {
@@ -200,30 +165,4 @@ function createEmptyTilesStats(): TilesRuntimeDebugStats {
     activeTiles: 0,
     trackedMeshes: 0,
   };
-}
-
-function getHeatmapDebugLines(state: BerlinState): readonly string[] {
-  const sampler = getBerlinCameraDensitySampler();
-  if (!sampler) {
-    return ["heatmap: not loaded"];
-  }
-
-  const playerGeoPoint = localToGeo(BERLIN_MITTE_ORIGIN, {
-    x: state.player.rig.position.x,
-    y: state.player.rig.position.y,
-    z: state.player.rig.position.z,
-  });
-  const originSample = sampler.sampleGeoPoint(
-    BERLIN_MITTE_ORIGIN.lat,
-    BERLIN_MITTE_ORIGIN.lon,
-  );
-  const playerSample = sampler.sampleGeoPoint(playerGeoPoint.lat, playerGeoPoint.lon);
-
-  return [
-    `heatmap: ${sampler.mode} ${sampler.imageWidth}x${sampler.imageHeight} ${sampler.imageOrientation}`,
-    `heatmap bounds: N${sampler.bounds.north.toFixed(3)} S${sampler.bounds.south.toFixed(3)} W${sampler.bounds.west.toFixed(3)} E${sampler.bounds.east.toFixed(3)}`,
-    "heatmap map: world -> localToGeo(origin) -> linear lat/lon UV",
-    `heatmap origin uv: ${originSample.uv.u.toFixed(3)}, ${originSample.uv.v.toFixed(3)} density ${originSample.density.toFixed(2)}`,
-    `heatmap player uv: ${playerSample.uv.u.toFixed(3)}, ${playerSample.uv.v.toFixed(3)} density ${playerSample.density.toFixed(2)}`,
-  ];
 }

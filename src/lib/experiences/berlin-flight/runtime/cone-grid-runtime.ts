@@ -16,6 +16,14 @@ const scratchScale = new THREE.Vector3();
 const scratchQuaternion = new THREE.Quaternion();
 const instanceDummy = new THREE.Object3D();
 
+export interface BerlinConeRuntimeDebugStats {
+  activeChunkCount: number;
+  activeCones: number;
+  hasLoadError: boolean;
+  loadedChunkCount: number;
+  loading: boolean;
+}
+
 export class BerlinConeGridRuntime {
   public readonly root = new THREE.Group();
 
@@ -108,6 +116,16 @@ export class BerlinConeGridRuntime {
 
   public getLoadError(): Error | null {
     return this.loadError;
+  }
+
+  public getDebugStats(): BerlinConeRuntimeDebugStats {
+    return {
+      activeChunkCount: this.activeConeChunksSnapshot.length,
+      activeCones: this.activeConeVolumes.length,
+      hasLoadError: this.loadError !== null,
+      loadedChunkCount: this.chunkStore.getLoadedChunkCount(),
+      loading: this.loading,
+    };
   }
 
   private syncFromChunkStore(): void {
