@@ -25,6 +25,8 @@ const shaderNeutralLightDirection = new THREE.Vector3(
   BERLIN_TILE_LOOK.NEUTRAL_SHADE_LIGHT_DIRECTION.y,
   BERLIN_TILE_LOOK.NEUTRAL_SHADE_LIGHT_DIRECTION.z,
 ).normalize();
+const BERLIN_TILE_OPAQUE_OPACITY = 1;
+
 export function createBerlinTileMaterial(
   sourceMaterial: THREE.Material | THREE.Material[],
 ): THREE.Material | THREE.Material[] {
@@ -81,16 +83,16 @@ function cloneBerlinTileMaterial(sourceMaterial: THREE.Material): THREE.Material
     (material as THREE.MeshStandardMaterial).roughness = BERLIN_TILE_LOOK.ROUGHNESS;
   }
   if ("opacity" in material) {
-    material.opacity = BERLIN_TILE_LOOK.OPACITY;
+    material.opacity = BERLIN_TILE_OPAQUE_OPACITY;
   }
   if ("transparent" in material) {
-    material.transparent = true;
+    material.transparent = false;
   }
 
   material.onBeforeCompile = (shader: ShaderCompileParameters, renderer) => {
     previousOnBeforeCompile(shader, renderer);
     shader.uniforms.uBerlinNeutralColor = { value: shaderNeutralColor };
-    shader.uniforms.uBerlinOutsideOpacity = { value: BERLIN_TILE_LOOK.OPACITY };
+    shader.uniforms.uBerlinOutsideOpacity = { value: BERLIN_TILE_OPAQUE_OPACITY };
     shader.uniforms.uBerlinNeutralLightDirection = {
       value: shaderNeutralLightDirection,
     };

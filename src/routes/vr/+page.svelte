@@ -73,7 +73,7 @@
         const dummyCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
 
         renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.xr.enabled = true;
         renderer.shadowMap.enabled = true;
@@ -90,6 +90,7 @@
             camera: dummyCamera,
             renderer,
         }).then((exp: ActiveExperience) => {
+            renderer.shadowMap.enabled = exp.manifest.id !== "berlin-flight";
             experienceName = exp.manifest.name;
             hasOutputs = (exp.manifest.outputs?.length ?? 0) > 0;
             const renderCamera = exp.state.camera as THREE.PerspectiveCamera;
