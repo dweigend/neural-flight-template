@@ -9,6 +9,23 @@ export interface BerlinCornerFilterResult {
   rejectedBySpacing: number;
 }
 
+/**
+ * Candidate-stage seam for future heatmap density integration.
+ *
+ * Currently a pass-through — returns candidates unchanged.
+ * Phase 3 of the heatmap plan will sample the heatmap here and
+ * trim per-building candidate lists based on density before the
+ * global spacing filter runs.
+ *
+ * @see heatmap-cone-density-plan.md Phase 3
+ */
+export function applyBerlinCornerCandidateStage(
+  candidates: readonly BerlinRoofCornerCandidate[],
+): readonly BerlinRoofCornerCandidate[] {
+  // Phase 3: heatmap density scoring plugs in here.
+  return candidates;
+}
+
 export function filterBerlinRoofCornerCandidates(
   candidates: readonly BerlinRoofCornerCandidate[],
 ): BerlinCornerFilterResult {
@@ -19,7 +36,17 @@ export function filterBerlinRoofCornerCandidates(
     };
   }
 
-  const sortedCandidates = [...candidates].sort(compareRoofCornerCandidates);
+  const stagedCandidates = applyBerlinCornerCandidateStage(candidates);
+  if (stagedCandidates.length === 0) {
+    return {
+      acceptedPoints: [],
+      rejectedBySpacing: 0,
+    };
+  }
+
+  const sortedCandidates = [...stagedCandidates].sort(
+    compareRoofCornerCandidates,
+  );
   const acceptedPoints: BerlinAcceptedShadowOriginPoint[] = [];
   const minDistanceSq =
     BERLIN_PLACEMENT.MIN_REQUIRED_DISTANCE *
