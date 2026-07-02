@@ -4,7 +4,6 @@ import type { SetupContext, TickContext } from "../types";
 import type { BerlinState } from "./types";
 import { setBerlinDebugEnabled } from "./debug/controller";
 import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
-import { preloadBerlinCameraDensitySampler } from "./heatmaps/camera-density-loader";
 import {
   BERLIN_ALTITUDE_SPEED,
   BERLIN_FLIGHT_BASE_SPEED,
@@ -45,8 +44,6 @@ function createBerlinFillLights(): {
  * Initializes the Berlin scene
  */
 export async function setup(ctx: SetupContext): Promise<BerlinState> {
-  await preloadBerlinCameraDensitySampler();
-
   const sceneRoot = new THREE.Group();
   sceneRoot.name = "BerlinFlightRoot";
   ctx.scene.add(sceneRoot);
@@ -140,6 +137,7 @@ export function tick(state: BerlinState, ctx: TickContext) {
   s.player.setXRPresenting(s.renderer.xr.isPresenting);
   s.player.tick(ctx.delta);
   s.player.rig.updateMatrixWorld(true);
+  s.coneRuntime.update(s.player.rig.position);
 
   if (s.tilesRuntime) {
     // Sync the WebXR session with the 3D Tiles scheduler so that requestAnimationFrame callbacks
@@ -151,20 +149,6 @@ export function tick(state: BerlinState, ctx: TickContext) {
     // ponytail: preload camera stays disabled until tile budgets are retuned for it;
     // it competes with the visible camera for refinement work.
     s.tilesRuntime.update([s.tileSelectionCamera], s.renderer);
-    s.placementController.update(
-      s.player.rig.position,
-      s.tilesRuntime.getTrackedTileMeshes(),
-      s.tilesRuntime.getTrackedTileMeshVersion(),
-    );
-    s.conePlacementController.update(
-      s.placementController.getAcceptedPoints(),
-      s.tilesRuntime.getTrackedTileMeshes(),
-      s.tilesRuntime.getTrackedTileMeshVersion(),
-    );
-    s.coneRuntime.setActiveCones(
-      s.conePlacementController.getActiveCones(),
-      s.conePlacementController.getSnapshotVersion(),
-    );
     s.collisionController.update(
       s.coneRuntime.getActiveCones(),
       s.coneRuntime.getSnapshotVersion(),
@@ -172,8 +156,6 @@ export function tick(state: BerlinState, ctx: TickContext) {
       s.tilesRuntime.getTrackedTileMeshVersion(),
     );
   }
-
-  s.coneRuntime.update(s.player.rig.position);
 
   if (s.debugEnabled) {
     s.debugOverlay?.update(s, ctx.elapsed);

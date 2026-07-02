@@ -3,7 +3,12 @@ import type {
   BerlinConeChunkSnapshot,
   BerlinConeVolume,
 } from "../collision/types";
+import {
+  BerlinConeChunkRuntimeStore,
+} from "../cone-data/runtime-store";
+import type { BerlinConeDatasetAssetLoader } from "../cone-data/asset-loader";
 import { BERLIN_CONE_GRID } from "./cone-grid-config";
+import { buildConeSnapshotState } from "./cone-grid-snapshots";
 
 const localDownAxis = new THREE.Vector3(0, -1, 0);
 const scratchCenter = new THREE.Vector3();
@@ -16,14 +21,16 @@ export class BerlinConeGridRuntime {
 
   private readonly coneGeometry: THREE.ConeGeometry;
   private readonly coneMaterial: THREE.MeshBasicMaterial;
+  private readonly chunkStore: BerlinConeChunkRuntimeStore;
   private mesh: THREE.InstancedMesh | null = null;
   private activeConeChunksSnapshot: readonly BerlinConeChunkSnapshot[] = [];
   private activeConeVolumes: readonly BerlinConeVolume[] = [];
-  private sourceVersion = -1;
   private snapshotVersion = 0;
   private disposed = false;
+  private loading = false;
+  private loadError: Error | null = null;
 
-  constructor() {
+  constructor(assetLoader?: BerlinConeDatasetAssetLoader) {
     this.root.name = "BerlinConeGridRoot";
     this.root.visible = false;
     this.coneGeometry = new THREE.ConeGeometry(
@@ -37,32 +44,38 @@ export class BerlinConeGridRuntime {
       color: BERLIN_CONE_GRID.COLOR,
       wireframe: true,
     });
+    this.chunkStore = new BerlinConeChunkRuntimeStore(assetLoader);
   }
 
-  public setActiveCones(
-    cones: readonly BerlinConeVolume[],
-    sourceVersion: number,
-  ): void {
-    if (this.disposed) return;
-    if (this.sourceVersion === sourceVersion) return;
+  public update(observerPosition: THREE.Vector3): void {
+    if (this.disposed || this.loading) return;
 
-    this.sourceVersion = sourceVersion;
-    this.activeConeVolumes = cones.slice().sort(compareConeVolumes);
-    this.activeConeChunksSnapshot =
-      this.activeConeVolumes.length === 0
-        ? []
-        : [
-            {
-              key: "active",
-              cones: this.activeConeVolumes,
-            },
-          ];
-    this.rebuildMesh();
-    this.snapshotVersion += 1;
-  }
+    this.loading = true;
+    void this.chunkStore
+      .update(observerPosition)
+      .then(() => {
+        if (this.disposed) {
+          return;
+        }
 
-  public update(_observerPosition: THREE.Vector3): void {
-    if (this.disposed) return;
+        this.loadError = null;
+        this.syncFromChunkStore();
+      })
+      .catch((error: unknown) => {
+        const nextError =
+          error instanceof Error ? error : new Error(String(error));
+        const shouldLog = this.loadError?.message !== nextError.message;
+        this.loadError = nextError;
+        if (shouldLog) {
+          console.error(
+            "[BerlinFlight] Failed to update precomputed cone chunks:",
+            error,
+          );
+        }
+      })
+      .finally(() => {
+        this.loading = false;
+      });
   }
 
   public dispose(): void {
@@ -73,7 +86,8 @@ export class BerlinConeGridRuntime {
     this.mesh = null;
     this.activeConeChunksSnapshot = [];
     this.activeConeVolumes = [];
-    this.sourceVersion = -1;
+    this.snapshotVersion = 0;
+    this.loadError = null;
 
     this.coneGeometry.dispose();
     this.coneMaterial.dispose();
@@ -90,6 +104,24 @@ export class BerlinConeGridRuntime {
 
   public getSnapshotVersion(): number {
     return this.snapshotVersion;
+  }
+
+  public getLoadError(): Error | null {
+    return this.loadError;
+  }
+
+  private syncFromChunkStore(): void {
+    if (this.snapshotVersion === this.chunkStore.getSnapshotVersion()) {
+      return;
+    }
+
+    const nextState = buildConeSnapshotState(this.chunkStore.getActiveConeChunks());
+    this.activeConeChunksSnapshot = nextState.chunkSnapshots;
+    this.activeConeVolumes = nextState.coneVolumes
+      .slice()
+      .sort(compareConeVolumes);
+    this.rebuildMesh();
+    this.snapshotVersion = this.chunkStore.getSnapshotVersion();
   }
 
   private rebuildMesh(): void {
@@ -148,5 +180,13 @@ function compareConeVolumes(
   left: BerlinConeVolume,
   right: BerlinConeVolume,
 ): number {
+  if (left.chunkKey !== right.chunkKey) {
+    return left.chunkKey.localeCompare(right.chunkKey);
+  }
+
+  if (left.coneIndex !== right.coneIndex) {
+    return left.coneIndex - right.coneIndex;
+  }
+
   return left.placementPointId.localeCompare(right.placementPointId);
 }
