@@ -59,47 +59,107 @@ filename character on Windows. Keep the import path as written.
 
 ### 2.2 `lennard/scripts/` — Overlays & Tooling
 
-#### Battery Overlay
-
-`battery-overlay.ts` — A canvas-drawn battery icon HUD rendered as a
-camera-aligned `THREE.Sprite`, following the same rendering pipeline as
-`CyberOverlay`. Displays remaining experience time as 4 battery bars.
-
-| Setting | Default | Purpose |
-|---------|---------|---------|
-| `totalTimeMs` | 300000 | Total countdown duration |
-| `outlineColor` | `"#00ffcc"` | Battery outline stroke colour |
-| `barColor` | `"#00ffcc"` | Fill colour of each bar |
-| `flickerColor` | `"#ff0044"` | Last-bar flicker colour at 95%+ |
-| `flickerSpeedMs` | 400 | Full on/off flicker cycle |
-
-**Behaviour:**
-- Bars (4→0) disappear at 25 %, 50 %, 75 % of total time elapsed.
-- At 95 % elapsed the remaining bar starts flickering (`flickerColor`).
-- Battery outline is a stroked rectangle + terminal tab (no fill).
-- Bars are filled rectangles, spaced apart, not touching the outline.
-
-**Data flow:**
-
-```
-BatteryOverlay.start()        ← begin countdown (stores performance.now())
-       │
-       ▼
-BatteryOverlay.update(now)    ← called every frame
-       │
-       ▼
-  _computeBars(fraction)      → bars (4,3,2,1,0)
-  flicker state (95%+ & last bar)
-       │
-       ▼
-  _draw(bars, flickerOn)      → Canvas → CanvasTexture → SpriteMaterial
-```
-
 #### Cyber Overlay
 
 `cyber-overlay.ts` — Full text-grid overlay system with canvas-to-sprite
 rendering, translation dictionary, responsive layout, and glow effects.
 Configured via the `CYBER` settings object.
+
+#### Sonar Overlay
+
+`sonar-overlay.ts` — A radar-sweep HUD rendered as a camera-aligned
+`THREE.Sprite`. Features a rotating scan line with trailing glow wedge,
+animated ambient dots, concentric rings, a center crosshair, and a
+unified ring of radial tick marks.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `tickCount` | 36 | Total ticks around the circle (every 10°) |
+| `tickInnerRadiusFrac` | 0.85 | Tick start radius as fraction of outer circle |
+| `tickMinorLength` | 12 | Shortest ticks |
+| `tickMajorLength` | 20 | Medium ticks (every 30°) |
+| `tickMajor2Length` | 32 | Longest ticks (every 60°) |
+| `tickMajorInterval` | 3 | Every Nth tick is medium |
+| `tickMajor2Interval` | 6 | Every Nth tick is longest |
+| `tickMinorColor` | `"#008866"` | Minor tick colour |
+| `tickMajorColor` | `"#00ffcc"` | Medium tick colour |
+| `tickMajor2Color` | `"#ff44aa"` | Longest tick colour |
+| `rotationSpeed` | 20 | Scan line rotation (deg/s) |
+| `glowAngleDeg` | 80 | Sweep wedge angular width |
+| `dotCount` | 15 | Ambient dots that activate on scan pass |
+| `fadeOutDuration` | 1.3 | Fade-out animation length (s) |
+| `fadeOutPeakScale` | 1.2 | Scale multiplier at peak before shrinking |
+| `fadeOutPeakTimeFrac` | 0.45 | When peak occurs (0–1) |
+
+**Data flow:**
+
+```
+SonarOverlay.constructor()    ← create canvas + texture + sprite
+       │
+       ▼
+SonarOverlay.attachToCamera() ← camera.add(sprite)
+       │
+       ▼ (every frame)
+SonarOverlay.update()         ← advance scanAngle, activate dots
+       │
+       ▼
+  _draw()                     → full canvas redraw → texture.needsUpdate
+```
+
+#### Sequence Controller
+
+`sequence-controller.ts` — Runs an ordered series of overlay stages with
+staggered pop-in, text-switching, and blink effects. Orchestrates
+`SonarOverlay`, `CyberOverlay`, and `BatteryOverlay` instances.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `staggerSeconds` | 0.3 | Delay between each overlay appearing |
+| `staggerFadeSeconds` | 0.3 | Fade-in duration per overlay |
+| `staggerFadeOutSeconds` | 0.2 | Fade-out old text before switching |
+| `staggerRandomOrder` | true | Randomize overlay reveal order |
+| `sonarFadeOutDelay` | 1.5 | Pause after sonar vanishes before next stage |
+| `blinkOnDuration` | 0.3 | How long blink overlays stay visible |
+| `blinkOffDuration` | 0.1 | How long blink overlays stay hidden |
+
+**Stages (in order):**
+
+1. `sonar` — Radar sweep HUD, 20 s
+2. `cyber` — "HUMAN PERCEPTION DETECTED", 10 s
+3. `cyber` — "SWITCHING TO TECHNOLOGICAL PERCEPTION", 6 s
+4. `battery` — Countdown battery icon, 50 s
+5. `blink` — "TURNING OFF TECHNOLOGICAL PERCEPTION" blinking grid, 4 s
+
+**Transition rules:**
+- Same factory (cyber → cyber): overlays kept, text swapped with stagger.
+- Different factory (cyber → battery): stagger fade-out, then new factory loads.
+- Sonar → next: sonar does grow-shrink animation, waits `sonarFadeOutDelay`, then advances.
+- Blink: all overlays toggle opacity simultaneously at `blinkOnDuration` / `blinkOffDuration` intervals.
+
+**Data flow:**
+
+```
+SequenceController.start()     ← begins stage 0
+       │
+       ▼ (every frame)
+SequenceController.update(delta)
+       │
+       ├─ active._sonar?.update()   ← sonar scan line
+       ├─ active._battery?.update()  ← battery countdown
+       ├─ applyStagger()             ← cyber pop-in / switch / fade
+       └─ advanceToNext()            ← on stage end
+```
+
+#### Battery Overlay
+
+`battery-overlay.ts` — A canvas-drawn battery icon HUD rendered as a
+camera-aligned `THREE.Sprite`. Displays remaining time as 4 bars that
+deplete at 25% intervals, with a flicker effect on the last bar.
+
+**Behaviour:**
+- Bars (4→0) disappear at 25%, 50%, 75% of total time elapsed.
+- At 95% elapsed the remaining bar flickers (`flickerColor`).
+- `start()` begins the countdown; `update(now)` drives per-frame state.
 
 #### Tooling
 

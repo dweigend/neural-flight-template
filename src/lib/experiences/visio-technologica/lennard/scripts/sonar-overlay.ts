@@ -23,7 +23,7 @@ export const SONAR = {
 
   // ── Ambient Dots (activate when the scan line passes over them) ─
   dotCount: 15, // Number of randomly placed dots
-  dotRadius: 13, // Base dot radius (canvas px)
+  dotRadius: 11, // Base dot radius (canvas px)
   dotActiveGlowRadius: 30, // Outer glow radius when a dot is hit (canvas px)
   dotFadeDuration: 2.8, // Seconds for a hit dot to fade out completely
   dotActivationThresholdDeg: 4, // Angular proximity (degrees) that triggers a dot
@@ -44,13 +44,13 @@ export const SONAR = {
   // Each entry: radiusFraction (0–1 as % of outer circle), lineWidth (canvas px), color.
 
   // ── Radial Tick Marks (unified ring, inside the circle) ────────
-  tickCount: 360, // Total number of ticks around the full circle (36 = every 10°)
+  tickCount: 360, // Total ticks around the full circle (36 = every 10°)
   tickInnerRadiusFrac: 0.9, // Inner (center-ward) radius of ticks as fraction of outer circle radius
   tickMajorInterval: 10, // Every Nth tick is a major tick (3 = every 30°)
-  tickMajor2Interval: 90, // Every Nth tick is the largest major tick (6 = every 60°)
+  tickMajor2Interval: 90, // Every Nth tick is the largest major tick (9 = every 90°)
   tickMinorLength: 12, // Length of minor ticks inward from tickInnerRadius (canvas px)
   tickMajorLength: 20, // Length of medium ticks (30° marks)
-  tickMajor2Length: 32, // Length of largest ticks (60° marks)
+  tickMajor2Length: 32, // Length of largest ticks (90° marks)
   tickWidth: 2, // Stroke width of tick marks (canvas px)
   tickMinorColor: "#008866", // Color of minor tick marks
   tickMajorColor: "#ff44aa", // Color of medium tick marks
@@ -63,6 +63,11 @@ export const SONAR = {
   glowColor: "#ff44aa", // Sweep beam glow color
   dotColor: "#ff44aa", // Dot fill color (base + glow)
   crossColor: "#00ffcc", // Crosshair and tick mark stroke color
+
+  // ── Fade-Out Animation ──────────────────────────────────────────
+  fadeOutDuration: 1.3, // Total fade-out duration in seconds
+  fadeOutPeakScale: 1.2, // Scale multiplier at the peak (sonar grows then shrinks)
+  fadeOutPeakTimeFrac: 0.45, // Fraction of duration at which peak is reached (0-1)
 };
 
 export interface InnerCircleDef {
@@ -85,6 +90,9 @@ export class SonarOverlay {
   private dots: DotState[] = [];
   private scanAngle = -Math.PI / 2;
   private lastTime = 0;
+  private fadeOutStart = -1;
+  private baseScale = SONAR.spriteScale;
+  private fadeOutComplete = false;
 
   constructor() {
     this.canvas = document.createElement("canvas");
@@ -114,16 +122,60 @@ export class SonarOverlay {
     this._draw();
   }
 
+  /** Start the fade-out animation: grows slightly then shrinks to zero. */
+  startFadeOut(): void {
+    this.fadeOutStart = performance.now();
+    this.baseScale = this.sprite.scale.x;
+    this.fadeOutComplete = false;
+  }
+
+  /** Returns true once the fade-out animation has fully finished. */
+  get isFadedOut(): boolean {
+    return this.fadeOutComplete;
+  }
+
+  /** Instantly hide/show the sonar (useful for reset). */
+  setVisible(visible: boolean): void {
+    this.sprite.visible = visible;
+  }
+
   attachToCamera(camera: THREE.Camera): void {
     camera.add(this.sprite);
     this.sprite.position.set(0, 0, -SONAR.distance);
     this.sprite.scale.set(SONAR.spriteScale, SONAR.spriteScale, 1);
+    this.baseScale = SONAR.spriteScale;
   }
 
   update(): void {
     const now = performance.now();
     const delta = (now - this.lastTime) / 1000;
     this.lastTime = now;
+
+    // ── Fade-out animation ──
+    if (this.fadeOutStart >= 0 && !this.fadeOutComplete) {
+      const elapsed = (now - this.fadeOutStart) / 1000;
+      const dur = SONAR.fadeOutDuration;
+      if (elapsed >= dur) {
+        this.sprite.scale.set(0, 0, 1);
+        this.sprite.visible = false;
+        this.fadeOutComplete = true;
+      } else {
+        const t = elapsed / dur;
+        // Scale curve: rise to peakScale at t=peakTimeFrac, then ease to 0
+        const peakT = SONAR.fadeOutPeakTimeFrac;
+        let multiplier: number;
+        if (t <= peakT) {
+          // Linear rise to peak
+          multiplier = 1 + (SONAR.fadeOutPeakScale - 1) * (t / peakT);
+        } else {
+          // Quadratic ease-out from peak down to 0
+          const fallFrac = (t - peakT) / (1 - peakT);
+          multiplier = SONAR.fadeOutPeakScale * (1 - fallFrac * fallFrac);
+        }
+        const s = this.baseScale * multiplier;
+        this.sprite.scale.set(s, s, 1);
+      }
+    }
 
     this.scanAngle += (SONAR.rotationSpeed * delta * Math.PI) / 180;
     if (this.scanAngle > Math.PI * 2) {

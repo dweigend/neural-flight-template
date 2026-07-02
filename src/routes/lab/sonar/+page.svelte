@@ -67,6 +67,10 @@
 
 <canvas bind:this={canvas}></canvas>
 
+<button class="fade-btn" on:click={() => overlay?.startFadeOut()}>
+  Fade Out Sonar
+</button>
+
 <style>
   canvas {
     display: block;
@@ -78,5 +82,25 @@
     margin: 0;
     overflow: hidden;
     background: #000;
+  }
+
+  .fade-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    padding: 10px 24px;
+    font: 500 14px/1 'Segoe UI', sans-serif;
+    color: #00ffcc;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid #00ffcc;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .fade-btn:hover {
+    background: rgba(0, 255, 204, 0.15);
   }
 </style>

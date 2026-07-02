@@ -6,6 +6,8 @@ import {
   getTexts,
   CYBER,
 } from "./cyber-overlay";
+import { SonarOverlay } from "./sonar-overlay";
+import { BatteryOverlay } from "./battery-overlay";
 
 // ══════════════════════════════════════════════════════════════════
 // SETTINGS — configure your sequence here
@@ -27,17 +29,28 @@ export const SEQ = {
   /** Randomize the order overlays pop up / switch text (false = left-to-right, top-to-bottom) */
   staggerRandomOrder: true,
 
+  /** Seconds to wait after sonar fade-out completes before advancing to the next stage */
+  sonarFadeOutDelay: 1.5,
+
+  /** Blink settings for the "blink" cyber stage */
+  blinkOnDuration: 1, // Seconds the overlays are visible per blink cycle
+  blinkOffDuration: 0.5, // Seconds the overlays are hidden per blink cycle
+
   /** Prequel overlay shown before the main sequence (not yet created) */
   prequel: {
-    enabled: true,
+    enabled: false,
     message: "VISION",
     durationSeconds: 5,
-    /** Which overlay factory to use for the prequel */
     factory: "prequel" as const,
   },
 
   /** Ordered list of overlay stages */
   stages: [
+    {
+      factory: "sonar" as const,
+      message: "",
+      durationSeconds: 20,
+    },
     {
       factory: "cyber" as const,
       message: "HUMAN PERCEPTION DETECTED",
@@ -46,7 +59,17 @@ export const SEQ = {
     {
       factory: "cyber" as const,
       message: "SWITCHING TO\nTECHNOLOGICAL PERCEPTION",
-      durationSeconds: 8,
+      durationSeconds: 6,
+    },
+    {
+      factory: "battery" as const,
+      message: "",
+      durationSeconds: 50,
+    },
+    {
+      factory: "blink" as const,
+      message: "TURNING OFF\nTECHNOLOGICAL PERCEPTION",
+      durationSeconds: 10,
     },
   ],
 };
@@ -61,7 +84,14 @@ export type StageDef = (typeof SEQ.stages)[number];
 export type OverlayFactoryFn = (
   message: string,
   camera: PerspectiveCamera,
-) => { overlays: CyberOverlay[]; dispose: () => void };
+) => {
+  overlays: CyberOverlay[];
+  dispose: () => void;
+  /** Optional sonar instance, set by the "sonar" factory */
+  _sonar?: SonarOverlay;
+  /** Optional battery instance, set by the "battery" factory */
+  _battery?: BatteryOverlay;
+};
 
 const FACTORIES: Record<string, OverlayFactoryFn> = {
   cyber(message, camera) {
@@ -100,6 +130,51 @@ const FACTORIES: Record<string, OverlayFactoryFn> = {
       },
     };
   },
+
+  sonar(_message, camera) {
+    const sonar = new SonarOverlay();
+    sonar.attachToCamera(camera);
+    return {
+      overlays: [],
+      dispose() {
+        camera.remove(sonar.sprite);
+        sonar.dispose();
+      },
+      _sonar: sonar,
+    };
+  },
+
+  battery(_message, camera) {
+    const battery = new BatteryOverlay();
+    battery.attachToCamera(camera);
+    battery.start();
+    return {
+      overlays: [],
+      dispose() {
+        camera.remove(battery.sprite);
+        battery.dispose();
+      },
+      _battery: battery,
+    };
+  },
+
+  blink(message, camera) {
+    const prev = CYBER.message;
+    CYBER.message = message;
+    const texts = getTexts();
+    CYBER.message = prev;
+    const overlays = createResponsiveGrid(texts, camera);
+    for (const ov of overlays) camera.add(ov.sprite);
+    return {
+      overlays,
+      dispose() {
+        for (const ov of overlays) {
+          camera.remove(ov.sprite);
+          ov.dispose();
+        }
+      },
+    };
+  },
 };
 
 /** Register a custom overlay factory */
@@ -123,18 +198,26 @@ export type SeqEvent = "stageStart" | "stageEnd" | "complete";
 
 export class SequenceController {
   private camera: PerspectiveCamera;
-  private active: { dispose: () => void; overlays: CyberOverlay[] } | null =
-    null;
+  private active: {
+    dispose: () => void;
+    overlays: CyberOverlay[];
+    _sonar?: SonarOverlay;
+    _battery?: BatteryOverlay;
+  } | null = null;
   private state: StageState;
   private onEvent?: (event: SeqEvent, state: StageState) => void;
   private _running = false;
   private _completed = false;
   private _fadeElapsed = 0;
+  private _sonarFadePending = false;
+  private _sonarFadeDoneTime = 0;
+  private _blinkElapsed = 0;
   private shuffledIndices: number[] = [];
   private textSwitched: Set<number> = new Set();
   private stageTexts: string[] = [];
   private oldTexts: string[] = [];
-  private staggerPhase: "popin" | "switch" | "fadeout" = "popin";
+  private staggerPhase: "popin" | "switch" | "fadeout" | "transitionFade" =
+    "popin";
 
   constructor(
     camera: PerspectiveCamera,
@@ -166,6 +249,7 @@ export class SequenceController {
     this._running = true;
     this._completed = false;
     this._fadeElapsed = 0;
+    this._blinkElapsed = 0;
 
     if (SEQ.prequel.enabled) {
       this.state = {
@@ -185,6 +269,7 @@ export class SequenceController {
     this._running = false;
     this._completed = false;
     this._fadeElapsed = 0;
+    this._sonarFadePending = false;
     this.staggerPhase = "popin";
     this.restoreOpacity();
     this.unloadCurrent();
@@ -192,6 +277,54 @@ export class SequenceController {
 
   update(delta: number): void {
     if (!this._running || this._completed) return;
+
+    // ── If waiting for sonar fade-out to finish, poll for completion ──
+    if (this._sonarFadePending) {
+      const sonar = this.active?._sonar;
+      if (sonar) {
+        sonar.update(); // Keep driving the fade-out animation
+        if (sonar.isFadedOut) {
+          // Once faded out, start the delay timer on first detection
+          if (this._sonarFadeDoneTime === 0) {
+            this._sonarFadeDoneTime = performance.now();
+          }
+          const delayMs = SEQ.sonarFadeOutDelay * 1000;
+          if (performance.now() - this._sonarFadeDoneTime >= delayMs) {
+            this._sonarFadePending = false;
+            this._sonarFadeDoneTime = 0;
+            this.unloadCurrent();
+            this.advanceToNext();
+          }
+        }
+      } else {
+        this._sonarFadePending = false;
+        this.unloadCurrent();
+        this.advanceToNext();
+      }
+      return;
+    }
+
+    // Drive the sonar/battery update loops while active
+    this.active?._sonar?.update();
+    this.active?._battery?.update(performance.now());
+
+    if (this.staggerPhase === "transitionFade") {
+      this._fadeElapsed += delta;
+      this.applyStagger();
+      const overlays = this.active?.overlays;
+      if (overlays && overlays.length > 0) {
+        const lastPos = Math.max(...this.shuffledIndices);
+        const totalDuration = lastPos * SEQ.staggerSeconds + SEQ.fadeOutSeconds;
+        if (this._fadeElapsed >= totalDuration) {
+          this.staggerPhase = "popin";
+          this.advanceToNext();
+        }
+      } else {
+        this.staggerPhase = "popin";
+        this.advanceToNext();
+      }
+      return;
+    }
 
     if (this.staggerPhase === "fadeout") {
       this._fadeElapsed += delta;
@@ -215,6 +348,21 @@ export class SequenceController {
     }
 
     this.applyStagger();
+
+    // ── Blink stage: all overlays blink on/off simultaneously ──
+    if (this.state.factory === "blink") {
+      this._blinkElapsed += delta;
+      const cycleDuration = SEQ.blinkOnDuration + SEQ.blinkOffDuration;
+      const pos = this._blinkElapsed % cycleDuration;
+      const on = pos < SEQ.blinkOnDuration;
+      const overlays = this.active?.overlays;
+      if (overlays) {
+        for (const ov of overlays) {
+          ov.sprite.material.opacity = on ? CYBER.opacity : 0;
+        }
+      }
+    }
+
     this.state.elapsed += delta;
 
     if (this.state.elapsed < this.state.duration) return;
@@ -224,8 +372,38 @@ export class SequenceController {
     if (this.state.index === -1) {
       this.advanceTo(0);
     } else if (this.state.index < SEQ.stages.length - 1) {
-      this.advanceTo(this.state.index + 1);
+      const nextFactory = SEQ.stages[this.state.index + 1].factory;
+
+      // ── Sonar stage: start fade-out and wait for completion ──
+      if (this.state.factory === "sonar") {
+        const sonar = this.active?._sonar;
+        if (sonar) {
+          sonar.startFadeOut();
+          this._sonarFadePending = true;
+        } else {
+          if (nextFactory === this.state.factory) {
+            this.advanceToNext();
+          } else {
+            this.startTransitionFade();
+          }
+        }
+      } else if (nextFactory === this.state.factory) {
+        // Same factory — switch texts directly (outlines stay)
+        this.advanceToNext();
+      } else {
+        // Different factory — fade out current overlays first
+        this.startTransitionFade();
+      }
     } else {
+      // ── Last stage — handle potential sonar fade-out ──
+      if (this.state.factory === "sonar") {
+        const sonar = this.active?._sonar;
+        if (sonar) {
+          sonar.startFadeOut();
+          this._sonarFadePending = true;
+          return;
+        }
+      }
       if (SEQ.fadeOutSeconds > 0) {
         this._fadeElapsed = 0;
         this.staggerPhase = "fadeout";
@@ -245,7 +423,11 @@ export class SequenceController {
     const texts = getTexts();
     CYBER.message = prev;
 
-    if (this.active && texts.length === this.active.overlays.length) {
+    if (
+      this.active &&
+      this.state.factory === stage.factory &&
+      texts.length === this.active.overlays.length
+    ) {
       this.state = {
         index: stageIndex,
         factory: stage.factory,
@@ -266,6 +448,19 @@ export class SequenceController {
       };
       this.loadCurrent();
     }
+  }
+
+  private advanceToNext(): void {
+    this.advanceTo(this.state.index + 1);
+  }
+
+  private startTransitionFade(): void {
+    if (!this.active || this.active.overlays.length === 0) {
+      this.advanceToNext();
+      return;
+    }
+    this._fadeElapsed = 0;
+    this.staggerPhase = "transitionFade";
   }
 
   private loadCurrent(): void {
@@ -324,7 +519,10 @@ export class SequenceController {
     const fadeOut = SEQ.staggerFadeOutSeconds;
     const fadeIn = SEQ.staggerFadeSeconds;
 
-    if (this.staggerPhase === "fadeout") {
+    if (
+      this.staggerPhase === "fadeout" ||
+      this.staggerPhase === "transitionFade"
+    ) {
       for (let i = 0; i < overlays.length; i++) {
         const pos = this.shuffledIndices[i] ?? i;
         const fadeAt = pos * SEQ.staggerSeconds;
