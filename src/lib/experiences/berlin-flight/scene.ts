@@ -131,7 +131,7 @@ export function tick(state: BerlinState, ctx: TickContext) {
     Scheduler.setXRSession(xrSession as XRSession);
 
     syncTileSelectionCamera(s);
-    s.tilesRuntime.update([s.tileSelectionCamera], s.renderer);
+    s.tilesRuntime.update(s.tileSelectionCamera, s.renderer);
     s.placementController.update(
       s.player.rig.position,
       s.tilesRuntime.getTrackedTileMeshes(),
@@ -245,7 +245,6 @@ export function dispose(state: BerlinState, _scene: THREE.Scene): void {
   s.debugOverlay?.dispose();
   s.debugOverlay = null;
 
-  s.tilesRuntime?.setVisible(false);
   s.tilesRuntime?.dispose();
   s.tilesRuntime = null;
   s.coneRuntime.dispose();

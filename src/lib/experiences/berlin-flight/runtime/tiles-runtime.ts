@@ -64,14 +64,13 @@ const BERLIN_TILE_RUNTIME_TUNING = {
  */
 export class TilesRuntimeAdapter {
   private renderer: TilesRenderer | null = null;
-  private loadPromise: Promise<TilesRenderer> | null = null;
-  private readonly activeCameras = new Set<Camera>();
+  private activeCamera: Camera | null = null;
   private readonly meshRegistry = new BerlinTileMeshRegistry();
   private readonly url: string;
   private readonly token: string;
   private disposed = false;
 
-  constructor(url: string, token: string) {
+  private constructor(url: string, token: string) {
     this.url = url;
     this.token = token;
   }
@@ -89,29 +88,12 @@ export class TilesRuntimeAdapter {
   ): Promise<TilesRuntimeAdapter> {
     const { url, token } = await resolveBerlinTileset();
     const runtime = new TilesRuntimeAdapter(url, token);
-    const renderer = await runtime.loadTiles(group, signal);
+    const renderer = await runtime.initializeTiles(group, signal);
     const localMatrix = getECEFToLocalMatrix(BERLIN_MITTE_ORIGIN);
     renderer.group.matrixAutoUpdate = false;
     renderer.group.matrix.copy(localMatrix);
     renderer.group.updateMatrixWorld(true);
     return runtime;
-  }
-
-  /**
-   * Initializes and loads the tileset.
-   */
-  public async loadTiles(
-    group: Group,
-    signal?: AbortSignal,
-  ): Promise<TilesRenderer> {
-    this.assertCanLoad(signal);
-    const activeLoad = this.renderer ?? this.loadPromise;
-    if (activeLoad) {
-      return activeLoad;
-    }
-
-    this.loadPromise = this.initializeTiles(group, signal);
-    return this.loadPromise;
   }
 
   private async initializeTiles(
@@ -210,8 +192,8 @@ export class TilesRuntimeAdapter {
     }
 
     this.meshRegistry.dispose();
+    this.activeCamera = null;
     this.renderer = null;
-    this.loadPromise = null;
   }
 
   private registerGoogleTilesPlugin(renderer: TilesRenderer): boolean {
@@ -244,44 +226,28 @@ export class TilesRuntimeAdapter {
    * Updates the tileset every frame.
    */
   // fallow-ignore-next-line unused-class-member
-  public update(
-    cameras: readonly Camera[],
-    webglRenderer: WebGLRenderer,
-  ): void {
+  public update(camera: Camera, webglRenderer: WebGLRenderer): void {
     const renderer = this.getVisibleRenderer();
     if (!renderer) return;
 
     renderer.group.updateMatrixWorld(true);
-    this.syncCameras(renderer, cameras, webglRenderer);
+    this.syncCamera(renderer, camera, webglRenderer);
     renderer.update();
   }
 
-  private syncCameras(
+  private syncCamera(
     renderer: TilesRenderer,
-    cameras: readonly Camera[],
+    camera: Camera,
     webglRenderer: WebGLRenderer,
   ): void {
-    for (const camera of this.activeCameras) {
-      if (!cameras.includes(camera)) {
-        renderer.deleteCamera(camera);
-        this.activeCameras.delete(camera);
-      }
+    if (this.activeCamera && this.activeCamera !== camera) {
+      renderer.deleteCamera(this.activeCamera);
     }
 
-    for (const camera of cameras) {
-      camera.updateMatrixWorld(true);
-      renderer.setCamera(camera);
-      renderer.setResolutionFromRenderer(camera, webglRenderer);
-      this.activeCameras.add(camera);
-    }
-  }
-
-  // fallow-ignore-next-line unused-class-member
-  public setVisible(visible: boolean): void {
-    if (this.disposed) return;
-    if (!this.renderer) return;
-
-    this.renderer.group.visible = visible;
+    camera.updateMatrixWorld(true);
+    renderer.setCamera(camera);
+    renderer.setResolutionFromRenderer(camera, webglRenderer);
+    this.activeCamera = camera;
   }
 
   // fallow-ignore-next-line unused-class-member
@@ -335,9 +301,12 @@ export class TilesRuntimeAdapter {
 
     if (!this.renderer) {
       this.meshRegistry.dispose();
-      this.loadPromise = null;
-      this.activeCameras.clear();
+      this.activeCamera = null;
       return;
+    }
+
+    if (this.activeCamera) {
+      this.renderer.deleteCamera(this.activeCamera);
     }
 
     this.renderer.group.removeFromParent();
@@ -346,8 +315,7 @@ export class TilesRuntimeAdapter {
     this.meshRegistry.dispose();
     this.renderer.dispose();
     this.renderer = null;
-    this.loadPromise = null;
-    this.activeCameras.clear();
+    this.activeCamera = null;
   }
 }
 
