@@ -50,8 +50,19 @@ export interface BerlinConeDatasetBuildResult {
 export function buildBerlinConeDataset(input: {
   trackedMeshes: readonly TrackedTileMesh[];
   densitySampler: BerlinDensitySampler | null;
+  radiusFilter?: {
+    center: {
+      x: number;
+      z: number;
+    };
+    radiusMeters: number;
+  };
 }): BerlinConeDatasetBuildResult {
-  const buildingSources = input.trackedMeshes.map(createOfflineBuildingSource);
+  const filteredMeshes = filterTrackedMeshesByRadius(
+    input.trackedMeshes,
+    input.radiusFilter,
+  );
+  const buildingSources = filteredMeshes.map(createOfflineBuildingSource);
   const candidates = buildingSources.flatMap((source) =>
     extractBerlinRoofCornerCandidates(source),
   );
@@ -65,7 +76,7 @@ export function buildBerlinConeDataset(input: {
   let skippedAmbiguousDirection = 0;
 
   for (const point of filterResult.acceptedPoints) {
-    const neighborhood = sampleBerlinMeshNeighborhood(point, input.trackedMeshes);
+    const neighborhood = sampleBerlinMeshNeighborhood(point, filteredMeshes);
     if (!neighborhood) {
       skippedMissingNeighborhood += 1;
       continue;
@@ -117,7 +128,7 @@ export function buildBerlinConeDataset(input: {
     manifest: createManifest(chunks.keys()),
     chunks,
     stats: {
-      sourceMeshes: input.trackedMeshes.length,
+      sourceMeshes: filteredMeshes.length,
       scannedBuildings: buildingSources.length,
       scannedCandidates: candidates.length,
       acceptedPoints: filterResult.acceptedPoints.length,
@@ -158,6 +169,31 @@ export function createTrackedMeshFromOfflineGeometry(input: {
 
   trackedMesh.sourceUrl = input.sourceUrl;
   return trackedMesh;
+}
+
+function filterTrackedMeshesByRadius(
+  trackedMeshes: readonly TrackedTileMesh[],
+  radiusFilter:
+    | {
+        center: {
+          x: number;
+          z: number;
+        };
+        radiusMeters: number;
+      }
+    | undefined,
+): readonly TrackedTileMesh[] {
+  if (!radiusFilter) {
+    return trackedMeshes;
+  }
+
+  const radiusSq = radiusFilter.radiusMeters * radiusFilter.radiusMeters;
+
+  return trackedMeshes.filter((trackedMesh) => {
+    const deltaX = trackedMesh.worldSphere.center.x - radiusFilter.center.x;
+    const deltaZ = trackedMesh.worldSphere.center.z - radiusFilter.center.z;
+    return deltaX * deltaX + deltaZ * deltaZ <= radiusSq;
+  });
 }
 
 function createOfflineBuildingSource(

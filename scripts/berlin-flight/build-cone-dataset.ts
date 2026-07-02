@@ -71,6 +71,13 @@ async function main(): Promise<void> {
   const result = buildBerlinConeDataset({
     trackedMeshes,
     densitySampler,
+    radiusFilter:
+      typeof sourceManifest.radiusMeters === "number"
+        ? {
+            center: sourceManifest.center ?? { x: 0, z: 0 },
+            radiusMeters: sourceManifest.radiusMeters,
+          }
+        : undefined,
   });
 
   await rm(outputDir, { force: true, recursive: true });
@@ -157,6 +164,19 @@ function parseSourceManifest(
           typeof source.sourceUrl === "string" ? source.sourceUrl : undefined,
       };
     }),
+    center:
+      isRecord(value.center) &&
+      typeof value.center.x === "number" &&
+      typeof value.center.z === "number"
+        ? {
+            x: value.center.x,
+            z: value.center.z,
+          }
+        : undefined,
+    radiusMeters:
+      typeof value.radiusMeters === "number" && Number.isFinite(value.radiusMeters)
+        ? value.radiusMeters
+        : undefined,
     outputDir: typeof value.outputDir === "string" ? value.outputDir : undefined,
     heatmapImagePath:
       typeof value.heatmapImagePath === "string"

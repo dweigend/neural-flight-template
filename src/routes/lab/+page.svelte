@@ -1,5 +1,5 @@
 <script lang="ts">
-    const experiments: { name: string; href: string; description: string }[] = [
+	const experiments: { name: string; href: string; description: string }[] = [
         {
             name: "Gradient Prism",
             href: "/lab/gradient-prism",
@@ -7,10 +7,16 @@
                 "Monolith field with gradient shaders, bloom, starfield, and film grain",
         },
 		{
-		name: "Sonar Overlay",
-		path: "sonar",
-		description:
-			"Opening sequence sonar sweep overlay with rotating scan line, pinging dots, and trailing glow",
+			name: "Sonar Overlay",
+			href: "/lab/sonar",
+			description:
+				"Opening sequence sonar sweep overlay with rotating scan line, pinging dots, and trailing glow",
+		},
+		{
+			name: "Berlin Cone Source",
+			href: "/lab/berlin-cone-source",
+			description:
+				"Capture Cesium building meshes around Berlin center and save a 1km cone-source file",
 		},
         {
             name: "Neon Metaball",

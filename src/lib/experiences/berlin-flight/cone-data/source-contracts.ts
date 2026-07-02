@@ -6,6 +6,11 @@ export interface BerlinConeSourceManifestEntry {
 export interface BerlinConeSourceManifest {
   version: 1;
   sources: readonly BerlinConeSourceManifestEntry[];
+  center?: {
+    x: number;
+    z: number;
+  };
+  radiusMeters?: number;
   outputDir?: string;
   heatmapImagePath?: string;
   heatmapBoundsPath?: string;

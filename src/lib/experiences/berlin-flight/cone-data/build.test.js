@@ -46,3 +46,28 @@ test("buildBerlinConeDataset creates chunked cone output from offline meshes", (
   expect(firstChunk.scalars.length % 2).toBe(0);
   expect(firstChunk.coneIndex.length).toBeGreaterThan(0);
 });
+
+test("buildBerlinConeDataset can filter buildings by radius around a center", () => {
+  const trackedMeshes = [
+    createBoxTrackedMesh("near-a", new THREE.Vector3(0, 20, 0)),
+    createBoxTrackedMesh("near-b", new THREE.Vector3(900, 20, 0)),
+    createBoxTrackedMesh("far-c", new THREE.Vector3(1300, 20, 0)),
+  ];
+
+  const result = buildBerlinConeDataset({
+    trackedMeshes,
+    densitySampler: {
+      sampleDensity() {
+        return 1;
+      },
+    },
+    radiusFilter: {
+      center: { x: 0, z: 0 },
+      radiusMeters: 1000,
+    },
+  });
+
+  expect(result.stats.sourceMeshes).toBe(2);
+  expect(result.stats.scannedBuildings).toBe(2);
+  expect(result.stats.generatedCones).toBeGreaterThan(0);
+});

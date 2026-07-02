@@ -8,8 +8,8 @@
   "outputDir": "src/lib/experiences/berlin-flight/cone-data/generated",
   "sources": [
     {
-      "path": "./source-meshes/example.json",
-      "sourceUrl": "offline-example"
+      "path": "./source-meshes/center-1km.json",
+      "sourceUrl": "cesium-center-1km"
     }
   ]
 }
