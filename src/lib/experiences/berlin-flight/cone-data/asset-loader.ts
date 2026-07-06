@@ -11,6 +11,32 @@ export interface BerlinConeDatasetAssetLoader {
   loadManifest(): Promise<BerlinConeDatasetManifest>;
 }
 
+export type BerlinConeDatasetLoadErrorCode =
+  | "manifest-missing"
+  | "manifest-invalid"
+  | "chunk-missing"
+  | "chunk-invalid"
+  | "load-error";
+
+export class BerlinConeDatasetLoadError extends Error {
+  public readonly code: BerlinConeDatasetLoadErrorCode;
+  public readonly chunkKey: string | null;
+
+  constructor(
+    code: BerlinConeDatasetLoadErrorCode,
+    message: string,
+    options?: {
+      chunkKey?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, options?.cause ? { cause: options.cause } : undefined);
+    this.name = "BerlinConeDatasetLoadError";
+    this.code = code;
+    this.chunkKey = options?.chunkKey ?? null;
+  }
+}
+
 type ImportGlobModuleLoader = () => Promise<unknown>;
 type ImportGlob = (
   pattern: string,
@@ -43,22 +69,35 @@ export function createBerlinConeDatasetAssetLoader(): BerlinConeDatasetAssetLoad
     async loadManifest(): Promise<BerlinConeDatasetManifest> {
       const manifestModule = Object.values(manifestModules)[0];
       if (!manifestModule) {
-        throw new Error(
+        throw new BerlinConeDatasetLoadError(
+          "manifest-missing",
           "[BerlinFlight] Missing precomputed cone manifest at cone-data/generated/manifest.json. Build the dataset first.",
         );
       }
 
-      return parseBerlinConeDatasetManifest(await manifestModule());
+      try {
+        return parseBerlinConeDatasetManifest(await manifestModule());
+      } catch (error: unknown) {
+        throw asDatasetLoadError("manifest-invalid", error);
+      }
     },
     async loadChunk(chunkKey: string): Promise<BerlinConeChunkSnapshot> {
       const chunkModule = chunkModules[`./generated/chunks/${chunkKey}.json`];
       if (!chunkModule) {
-        throw new Error(
+        throw new BerlinConeDatasetLoadError(
+          "chunk-missing",
           `[BerlinFlight] Missing precomputed cone chunk ${chunkKey} at cone-data/generated/chunks/${chunkKey}.json.`,
+          { chunkKey },
         );
       }
 
-      return createBerlinConeChunkSnapshot(parseBerlinConeChunkData(await chunkModule()));
+      try {
+        return createBerlinConeChunkSnapshot(
+          parseBerlinConeChunkData(await chunkModule()),
+        );
+      } catch (error: unknown) {
+        throw asDatasetLoadError("chunk-invalid", error, chunkKey);
+      }
     },
   };
 }
@@ -206,4 +245,20 @@ function parseBerlinConeChunkKey(value: string): BerlinConeChunkKey {
   }
 
   return value as BerlinConeChunkKey;
+}
+
+function asDatasetLoadError(
+  code: BerlinConeDatasetLoadErrorCode,
+  error: unknown,
+  chunkKey?: string,
+): BerlinConeDatasetLoadError {
+  if (error instanceof BerlinConeDatasetLoadError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return new BerlinConeDatasetLoadError(code, message, {
+    cause: error,
+    chunkKey,
+  });
 }

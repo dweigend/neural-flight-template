@@ -8,6 +8,7 @@ import type { BerlinCollisionDebugStats } from "../collision/controller";
 import type { BerlinConeRuntimeDebugStats } from "../runtime/cone-grid-runtime";
 import type { TilesRuntimeDebugStats } from "../runtime/tiles-runtime";
 import type { BerlinState } from "../types";
+import type { BerlinConeChunkRuntimeDiagnostics } from "../cone-data/runtime-store";
 
 export interface BerlinDebugOverlay {
   update(state: BerlinState, elapsed: number): void;
@@ -49,6 +50,7 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
   private coneRuntimeStats: BerlinConeRuntimeDebugStats = {
     activeChunkCount: 0,
     activeCones: 0,
+    diagnostics: createEmptyConeRuntimeDiagnostics(),
     hasLoadError: false,
     loadedChunkCount: 0,
     loading: false,
@@ -124,14 +126,16 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
 
     ctx.font = "16px monospace";
     ctx.fillStyle = "#b9fbc0";
+    const coneStatus = getConeStatusLines(this.coneRuntimeStats);
     const lines = [
       `loading: ${state.isLoading}`,
       `disposed: ${state.isDisposed}`,
       `speed: ${state.player.velocity.toFixed(1)} m/s`,
-      `cone loading: ${this.coneRuntimeStats.loading}`,
-      `cone load error: ${this.coneRuntimeStats.hasLoadError}`,
-      `cone chunks active: ${this.coneRuntimeStats.activeChunkCount}`,
-      `cone chunks loaded: ${this.coneRuntimeStats.loadedChunkCount}`,
+      `cone status: ${coneStatus.status}`,
+      `cone detail: ${coneStatus.detail}`,
+      `cone player chunk: ${this.coneRuntimeStats.diagnostics.playerChunkKey ?? "n/a"}`,
+      `cone chunks: ${this.coneRuntimeStats.activeChunkCount} active / ${this.coneRuntimeStats.diagnostics.loadedDesiredChunkCount}/${this.coneRuntimeStats.diagnostics.inBoundsChunkCount} nearby / ${this.coneRuntimeStats.loadedChunkCount} loaded`,
+      `cone runtime active: ${this.coneRuntimeStats.activeCones}`,
       `tiles renderer: ${this.tilesStats.hasRenderer}`,
       `tiles visible: ${this.tilesStats.isVisible}`,
       `load progress: ${this.tilesStats.loadProgress.toFixed(2)}`,
@@ -142,7 +146,6 @@ class CanvasDebugOverlay implements BerlinDebugOverlay {
       `dirty meshes: ${this.collisionStats.dirtyMeshes}`,
       `meshes/tick: ${this.collisionStats.processedMeshesLastTick}`,
       `vertices/tick: ${this.collisionStats.verticesTestedLastTick}`,
-      `cone runtime active: ${this.coneRuntimeStats.activeCones}`,
     ];
 
     for (let index = 0; index < lines.length; index += 1) {
@@ -164,5 +167,89 @@ function createEmptyTilesStats(): TilesRuntimeDebugStats {
     visibleTiles: 0,
     activeTiles: 0,
     trackedMeshes: 0,
+  };
+}
+
+function createEmptyConeRuntimeDiagnostics(): BerlinConeChunkRuntimeDiagnostics {
+  return {
+    playerChunkKey: null,
+    desiredChunkCount: 0,
+    inBoundsChunkCount: 0,
+    loadedDesiredChunkCount: 0,
+    activeChunkCount: 0,
+    activeConeCount: 0,
+    manifestLoaded: false,
+    outOfBounds: false,
+    emptyNearby: false,
+    errorCode: null,
+    errorChunkKey: null,
+    errorMessage: null,
+  };
+}
+
+function getConeStatusLines(
+  stats: BerlinConeRuntimeDebugStats,
+): {
+  status: string;
+  detail: string;
+} {
+  const diagnostics = stats.diagnostics;
+
+  if (stats.loading) {
+    return {
+      status: "loading",
+      detail: `${diagnostics.loadedDesiredChunkCount}/${diagnostics.inBoundsChunkCount} nearby chunks ready`,
+    };
+  }
+
+  switch (diagnostics.errorCode) {
+    case "manifest-missing":
+      return {
+        status: "error",
+        detail: "manifest missing",
+      };
+    case "manifest-invalid":
+      return {
+        status: "error",
+        detail: "manifest invalid",
+      };
+    case "chunk-missing":
+      return {
+        status: "error",
+        detail: `chunk missing ${diagnostics.errorChunkKey ?? "unknown"}`,
+      };
+    case "chunk-invalid":
+      return {
+        status: "error",
+        detail: diagnostics.errorChunkKey
+          ? `chunk invalid ${diagnostics.errorChunkKey}`
+          : "chunk load error",
+      };
+    case "load-error":
+      return {
+        status: "error",
+        detail: "cone load error",
+      };
+    default:
+      break;
+  }
+
+  if (diagnostics.outOfBounds) {
+    return {
+      status: "no data nearby",
+      detail: "player chunk is outside dataset bounds",
+    };
+  }
+
+  if (diagnostics.emptyNearby) {
+    return {
+      status: "empty nearby",
+      detail: "nearby chunks loaded, no active cones",
+    };
+  }
+
+  return {
+    status: "ready",
+    detail: `${stats.activeCones} cones across ${stats.activeChunkCount} active chunks`,
   };
 }

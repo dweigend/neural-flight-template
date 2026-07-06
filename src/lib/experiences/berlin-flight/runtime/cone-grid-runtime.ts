@@ -5,6 +5,7 @@ import type {
 } from "../collision/types";
 import {
   BerlinConeChunkRuntimeStore,
+  type BerlinConeChunkRuntimeDiagnostics,
 } from "../cone-data/runtime-store";
 import type { BerlinConeDatasetAssetLoader } from "../cone-data/asset-loader";
 import { BERLIN_CONE_GRID } from "./cone-grid-config";
@@ -19,6 +20,7 @@ const instanceDummy = new THREE.Object3D();
 export interface BerlinConeRuntimeDebugStats {
   activeChunkCount: number;
   activeCones: number;
+  diagnostics: BerlinConeChunkRuntimeDiagnostics;
   hasLoadError: boolean;
   loadedChunkCount: number;
   loading: boolean;
@@ -137,6 +139,7 @@ export class BerlinConeGridRuntime {
     return {
       activeChunkCount: this.activeConeChunksSnapshot.length,
       activeCones: this.activeConeVolumes.length,
+      diagnostics: this.chunkStore.getDiagnostics(),
       hasLoadError: this.loadError !== null,
       loadedChunkCount: this.chunkStore.getLoadedChunkCount(),
       loading: this.loading,
@@ -171,6 +174,7 @@ export class BerlinConeGridRuntime {
       this.activeConeVolumes.length,
     );
     mesh.name = "BerlinConeInstances";
+    mesh.frustumCulled = false;
 
     for (
       let coneIndex = 0;
