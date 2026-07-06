@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { expect, test } from "bun:test";
 import * as THREE from "three";
+import { BerlinConeDatasetLoadError } from "./asset-loader";
 import { BerlinConeChunkRuntimeStore } from "./runtime-store";
 
 function createLoader() {
@@ -141,4 +142,59 @@ test("BerlinConeChunkRuntimeStore respects the per-tick chunk load budget", asyn
 
   expect(loadCount).toBe(4);
   expect(store.getLoadedChunkCount()).toBe(4);
+});
+
+test("BerlinConeChunkRuntimeStore treats missing in-bounds chunk files as empty chunks", async () => {
+  const store = new BerlinConeChunkRuntimeStore({
+    async loadManifest() {
+      return {
+        version: 1,
+        origin: { x: 0, z: 0 },
+        chunkSizeMeters: 1920,
+        bounds: {
+          minChunkX: -1,
+          maxChunkX: 1,
+          minChunkZ: -1,
+          maxChunkZ: 1,
+        },
+        chunkCount: 7,
+      };
+    },
+    async loadChunk(chunkKey) {
+      if (chunkKey === "1:-1" || chunkKey === "0:1") {
+        throw new BerlinConeDatasetLoadError(
+          "chunk-missing",
+          `missing chunk ${chunkKey}`,
+          { chunkKey },
+        );
+      }
+
+      return {
+        key: chunkKey,
+        cones:
+          chunkKey === "0:0"
+            ? [
+                {
+                  tip: new THREE.Vector3(0, 20, 0),
+                  axisDirection: new THREE.Vector3(0, -1, 0),
+                  radius: 48,
+                  height: 180,
+                  baseCenter: new THREE.Vector3(0, -160, 0),
+                  placementPointId: "0:0:0",
+                  sourceBuildingId: "0:0",
+                  chunkKey: "0:0",
+                  coneIndex: 0,
+                },
+              ]
+            : [],
+      };
+    },
+  });
+
+  await store.update(new THREE.Vector3(0, 0, 0));
+  await store.update(new THREE.Vector3(0, 0, 0));
+
+  expect(store.getActiveConeChunks().map((chunk) => chunk.key)).toContain("0:0");
+  expect(store.getActiveCones()).toHaveLength(1);
+  expect(store.getLoadedChunkCount()).toBeGreaterThanOrEqual(4);
 });

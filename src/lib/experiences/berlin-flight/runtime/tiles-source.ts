@@ -4,10 +4,17 @@ import {
   BERLIN_TILES_URL,
 } from "../constants";
 
-export interface BerlinTilesSource {
+interface BerlinTilesSourceBase {
+  kind: "remote-tileset";
   url: string;
   token: string;
 }
+
+export interface BerlinRemoteTilesSource extends BerlinTilesSourceBase {
+  kind: "remote-tileset";
+}
+
+export type BerlinTilesSource = BerlinRemoteTilesSource;
 
 export const BERLIN_OFFLINE_TILES_URL = "/tiles/berlin/tileset.json";
 
@@ -20,12 +27,15 @@ type CesiumIonEndpointResponse = {
 };
 
 export function isBerlinTilesSourceConfigured(): boolean {
-  return Boolean(BERLIN_TILES_URL || (BERLIN_CESIUM_ION_TOKEN && BERLIN_ION_ASSET_ID));
+  return Boolean(
+    BERLIN_TILES_URL || (BERLIN_CESIUM_ION_TOKEN && BERLIN_ION_ASSET_ID),
+  );
 }
 
 export async function resolveBerlinTilesSource(): Promise<BerlinTilesSource> {
   if (BERLIN_TILES_URL) {
     return {
+      kind: "remote-tileset",
       url: BERLIN_TILES_URL,
       token: BERLIN_CESIUM_ION_TOKEN || "",
     };
@@ -48,6 +58,7 @@ export async function resolveOfflineBerlinTilesSource(
   }
 
   return {
+    kind: "remote-tileset",
     url: BERLIN_OFFLINE_TILES_URL,
     token: "",
   };
@@ -71,6 +82,7 @@ async function resolveCesiumIonTilesSource(): Promise<BerlinTilesSource> {
   const data = (await response.json()) as CesiumIonEndpointResponse;
 
   return {
+    kind: "remote-tileset",
     url: getCesiumTilesetUrl(data),
     token: getStringValue(data.accessToken),
   };

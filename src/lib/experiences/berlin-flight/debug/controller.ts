@@ -6,10 +6,11 @@ export function setBerlinDebugEnabled(
   enabled: boolean,
 ): void {
   if (state.isDisposed) return;
-  if (state.debugEnabled === enabled) return;
+  const changed = state.debugEnabled !== enabled;
 
   state.debugEnabled = enabled;
-  state.coneRuntime.root.visible = enabled;
+  state.coneRuntime.setDebugEnabled(enabled);
+  if (!changed) return;
 
   if (!enabled) {
     state.debugOverlay?.dispose();

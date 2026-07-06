@@ -143,11 +143,13 @@ export function tick(state: BerlinState, ctx: TickContext) {
     // ponytail: preload camera stays disabled until tile budgets are retuned for it;
     // it competes with the visible camera for refinement work.
     s.tilesRuntime.update([s.tileSelectionCamera], s.renderer);
+    const trackedTileMeshes = s.tilesRuntime.getTrackedTileMeshes();
+    const trackedTileMeshVersion = s.tilesRuntime.getTrackedTileMeshVersion();
     s.collisionController.update(
       s.coneRuntime.getActiveCones(),
       s.coneRuntime.getSnapshotVersion(),
-      s.tilesRuntime.getTrackedTileMeshes(),
-      s.tilesRuntime.getTrackedTileMeshVersion(),
+      trackedTileMeshes,
+      trackedTileMeshVersion,
     );
   }
 

@@ -3,6 +3,7 @@ import type {
   BerlinConeChunkSnapshot,
   BerlinConeVolume,
 } from "../collision/types";
+import { BerlinConePlacementDebugMarkers } from "../cone-placement/debug-markers";
 import {
   BerlinConeChunkRuntimeStore,
   type BerlinConeChunkRuntimeDiagnostics,
@@ -34,6 +35,7 @@ export class BerlinConeGridRuntime {
   private readonly chunkStore: BerlinConeChunkRuntimeStore;
   private readonly queuedObserverPosition = new THREE.Vector3();
   private mesh: THREE.InstancedMesh | null = null;
+  private debugMarkers: BerlinConePlacementDebugMarkers | null = null;
   private activeConeChunksSnapshot: readonly BerlinConeChunkSnapshot[] = [];
   private activeConeVolumes: readonly BerlinConeVolume[] = [];
   private snapshotVersion = 0;
@@ -57,6 +59,23 @@ export class BerlinConeGridRuntime {
       wireframe: true,
     });
     this.chunkStore = new BerlinConeChunkRuntimeStore(assetLoader);
+  }
+
+  public setDebugEnabled(enabled: boolean): void {
+    this.root.visible = enabled;
+
+    if (!enabled) {
+      this.debugMarkers?.dispose();
+      this.debugMarkers = null;
+      return;
+    }
+
+    if (!this.debugMarkers) {
+      this.debugMarkers = new BerlinConePlacementDebugMarkers();
+      this.debugMarkers.attach(this.root);
+    }
+
+    this.debugMarkers.update(this.activeConeVolumes);
   }
 
   public update(observerPosition: THREE.Vector3): void {
@@ -113,6 +132,8 @@ export class BerlinConeGridRuntime {
     this.activeConeVolumes = [];
     this.snapshotVersion = 0;
     this.loadError = null;
+    this.debugMarkers?.dispose();
+    this.debugMarkers = null;
 
     this.coneGeometry.dispose();
     this.coneMaterial.dispose();
@@ -157,6 +178,7 @@ export class BerlinConeGridRuntime {
       .slice()
       .sort(compareConeVolumes);
     this.rebuildMesh();
+    this.debugMarkers?.update(this.activeConeVolumes);
     this.snapshotVersion = this.chunkStore.getSnapshotVersion();
   }
 

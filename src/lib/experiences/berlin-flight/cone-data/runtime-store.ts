@@ -129,9 +129,29 @@ export class BerlinConeChunkRuntimeStore {
         return;
       }
 
-      const snapshot = await this.assetLoader.loadChunk(chunkKey);
+      const snapshot = await this.loadChunkOrEmpty(chunkKey);
       this.loadedChunks.set(chunkKey, snapshot);
       loadsStarted += 1;
+    }
+  }
+
+  private async loadChunkOrEmpty(
+    chunkKey: string,
+  ): Promise<BerlinConeChunkSnapshot> {
+    try {
+      return await this.assetLoader.loadChunk(chunkKey);
+    } catch (error) {
+      if (
+        error instanceof BerlinConeDatasetLoadError &&
+        error.code === "chunk-missing"
+      ) {
+        return {
+          key: chunkKey,
+          cones: [],
+        };
+      }
+
+      throw error;
     }
   }
 
