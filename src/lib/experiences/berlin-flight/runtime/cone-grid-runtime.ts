@@ -30,6 +30,7 @@ export class BerlinConeGridRuntime {
   private readonly coneGeometry: THREE.ConeGeometry;
   private readonly coneMaterial: THREE.MeshBasicMaterial;
   private readonly chunkStore: BerlinConeChunkRuntimeStore;
+  private readonly queuedObserverPosition = new THREE.Vector3();
   private mesh: THREE.InstancedMesh | null = null;
   private activeConeChunksSnapshot: readonly BerlinConeChunkSnapshot[] = [];
   private activeConeVolumes: readonly BerlinConeVolume[] = [];
@@ -37,6 +38,7 @@ export class BerlinConeGridRuntime {
   private disposed = false;
   private loading = false;
   private loadError: Error | null = null;
+  private hasQueuedObserverPosition = false;
 
   constructor(assetLoader?: BerlinConeDatasetAssetLoader) {
     this.root.name = "BerlinConeGridRoot";
@@ -56,11 +58,18 @@ export class BerlinConeGridRuntime {
   }
 
   public update(observerPosition: THREE.Vector3): void {
-    if (this.disposed || this.loading) return;
+    if (this.disposed) return;
+
+    if (this.loading) {
+      this.queuedObserverPosition.copy(observerPosition);
+      this.hasQueuedObserverPosition = true;
+      return;
+    }
 
     this.loading = true;
+    const requestedPosition = observerPosition.clone();
     void this.chunkStore
-      .update(observerPosition)
+      .update(requestedPosition)
       .then(() => {
         if (this.disposed) {
           return;
@@ -83,6 +92,12 @@ export class BerlinConeGridRuntime {
       })
       .finally(() => {
         this.loading = false;
+        if (this.disposed || !this.hasQueuedObserverPosition) {
+          return;
+        }
+
+        this.hasQueuedObserverPosition = false;
+        this.update(this.queuedObserverPosition);
       });
   }
 

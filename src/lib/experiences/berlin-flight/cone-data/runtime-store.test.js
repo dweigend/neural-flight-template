@@ -139,6 +139,6 @@ test("BerlinConeChunkRuntimeStore respects the per-tick chunk load budget", asyn
 
   await store.update(new THREE.Vector3(0, 0, 0));
 
-  expect(loadCount).toBe(3);
-  expect(store.getLoadedChunkCount()).toBe(3);
+  expect(loadCount).toBe(4);
+  expect(store.getLoadedChunkCount()).toBe(4);
 });

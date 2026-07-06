@@ -1,30 +1,48 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import * as THREE from "three";
-  import { buildBerlinConeSourceMeshFile } from "$lib/experiences/berlin-flight/cone-data/source-export";
-  import { BERLIN_CONE_GRID } from "$lib/experiences/berlin-flight/runtime/cone-grid-config";
-  import { resolveBerlinTilesSource } from "$lib/experiences/berlin-flight/runtime/tiles-source";
+  import {
+    buildBerlinSourceFilesBySourceUrl,
+    createBerlinFullCitySweepPlan,
+  } from "$lib/experiences/berlin-flight/cone-data/full-city-export";
+  import type { BerlinConeSourceMeshFile } from "$lib/experiences/berlin-flight/cone-data/source-contracts";
+  import {
+    BERLIN_OFFLINE_TILES_URL,
+    resolveOfflineBerlinTilesSource,
+  } from "$lib/experiences/berlin-flight/runtime/tiles-source";
   import { TilesRuntimeAdapter } from "$lib/experiences/berlin-flight/runtime/tiles-runtime";
 
-  const CAPTURE_CENTER = { x: 0, z: 0 } as const;
-  const CAPTURE_RADIUS_METERS = 1000;
+  const CAMERA_HEIGHT = 2600;
+  const CAMERA_FAR = 30000;
+  const SWEEP_STEP_METERS = 2500;
+  const STABLE_SETTLE_MS = 1500;
+
+  const sweepPlan = createBerlinFullCitySweepPlan(SWEEP_STEP_METERS);
 
   let canvas: HTMLCanvasElement;
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
   let camera: THREE.PerspectiveCamera | null = null;
   let tilesGroup: THREE.Group | null = null;
-  let tilesRuntime: TilesRuntimeAdapter | null = null;
-  let status = $state("Initializing Cesium tiles...");
+  let tilesRuntime = $state<TilesRuntimeAdapter | null>(null);
+
+  let status = $state(`Waiting for offline tiles at ${BERLIN_OFFLINE_TILES_URL}...`);
   let trackedMeshes = $state(0);
-  let sourceMeshesInRadius = $state(0);
-  let loadProgress = $state(0);
   let activeTiles = $state(0);
   let visibleTiles = $state(0);
-  let saveMessage = $state("");
-  let lastTrackedMeshChangeAt = 0;
-  let isStable = $state(false);
+  let loadProgress = $state(0);
+  let capturedSourceTiles = $state(0);
+  let capturedMeshes = $state(0);
+  let currentSweepIndex = $state(0);
+  let isSweeping = $state(false);
   let isSaving = $state(false);
+  let saveMessage = $state("");
+
+  const exportedFilesBySourceUrl = new Map<string, BerlinConeSourceMeshFile>();
+  const seenSourceUrls = new Set<string>();
+  let lastTrackedMeshVersion = -1;
+  let lastTrackedMeshChangeAt = 0;
+  let sweepAdvancePending = false;
 
   onMount(() => {
     void setup();
@@ -46,27 +64,24 @@
         85,
         window.innerWidth / window.innerHeight,
         1,
-        20000,
+        CAMERA_FAR,
       );
-      camera.position.set(0, 2200, 0);
-      camera.up.set(0, 0, -1);
-      camera.lookAt(0, 0, 0);
-      camera.updateMatrixWorld(true);
+      moveCameraToSweepCell(0);
 
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
       renderer.setSize(window.innerWidth, window.innerHeight);
 
-      const source = await resolveBerlinTilesSource();
+      const source = await resolveOfflineBerlinTilesSource();
       tilesRuntime = await TilesRuntimeAdapter.create(tilesGroup, source);
-      status = "Streaming tiles around Berlin center...";
       lastTrackedMeshChangeAt = performance.now();
+      status = "Ready to sweep offline Berlin tiles.";
       renderer.setAnimationLoop(tick);
     } catch (error) {
       status =
         error instanceof Error
           ? error.message
-          : "Failed to initialize Berlin cone source capture.";
+          : "Failed to initialize the full-Berlin cone source exporter.";
     }
   }
 
@@ -82,51 +97,109 @@
     loadProgress = stats.loadProgress;
     activeTiles = stats.activeTiles;
     visibleTiles = stats.visibleTiles;
+    trackedMeshes = stats.trackedMeshes;
 
-    const nextTrackedMeshes = tilesRuntime.getTrackedTileMeshes();
-    if (nextTrackedMeshes.length !== trackedMeshes) {
-      trackedMeshes = nextTrackedMeshes.length;
+    const trackedMeshVersion = tilesRuntime.getTrackedTileMeshVersion();
+    if (trackedMeshVersion !== lastTrackedMeshVersion) {
+      lastTrackedMeshVersion = trackedMeshVersion;
       lastTrackedMeshChangeAt = performance.now();
     }
 
-    const exportPreview = buildBerlinConeSourceMeshFile(nextTrackedMeshes, {
-      center: CAPTURE_CENTER,
-      radiusMeters: CAPTURE_RADIUS_METERS,
-    });
-    sourceMeshesInRadius = exportPreview.sourceMeshesInRadius;
-    isStable =
+    if (!isSweeping || sweepAdvancePending) {
+      return;
+    }
+
+    const isStable =
       loadProgress >= 1 &&
-      performance.now() - lastTrackedMeshChangeAt >= 1500;
+      performance.now() - lastTrackedMeshChangeAt >= STABLE_SETTLE_MS;
     status = isStable
-      ? "Ready to save 1km source mesh capture."
-      : "Waiting for tile streaming to stabilize...";
+      ? `Capturing sweep cell ${currentSweepIndex + 1} of ${sweepPlan.cells.length}...`
+      : `Waiting for sweep cell ${currentSweepIndex + 1} of ${sweepPlan.cells.length} to settle...`;
+
+    if (!isStable) {
+      return;
+    }
+
+    sweepAdvancePending = true;
+    void captureCurrentSweepCell().finally(() => {
+      sweepAdvancePending = false;
+    });
   }
 
-  async function saveCapture(): Promise<void> {
-    if (!tilesRuntime || isSaving) {
+  async function startSweep(): Promise<void> {
+    if (!tilesRuntime || !camera || isSweeping || isSaving) {
+      return;
+    }
+
+    exportedFilesBySourceUrl.clear();
+    seenSourceUrls.clear();
+    capturedSourceTiles = 0;
+    capturedMeshes = 0;
+    currentSweepIndex = 0;
+    saveMessage = "";
+    isSweeping = true;
+    moveCameraToSweepCell(0);
+    lastTrackedMeshChangeAt = performance.now();
+    status = `Sweeping 1 of ${sweepPlan.cells.length} cells...`;
+  }
+
+  async function captureCurrentSweepCell(): Promise<void> {
+    if (!tilesRuntime) {
+      return;
+    }
+
+    const exportResult = buildBerlinSourceFilesBySourceUrl(
+      tilesRuntime.getTrackedTileMeshes(),
+      seenSourceUrls,
+    );
+
+    for (const [sourceUrl, file] of exportResult.filesBySourceUrl) {
+      seenSourceUrls.add(sourceUrl);
+      exportedFilesBySourceUrl.set(sourceUrl, file);
+    }
+
+    capturedSourceTiles = exportedFilesBySourceUrl.size;
+    capturedMeshes += exportResult.meshesAdded;
+
+    if (currentSweepIndex + 1 >= sweepPlan.cells.length) {
+      isSweeping = false;
+      await saveExport();
+      return;
+    }
+
+    currentSweepIndex += 1;
+    moveCameraToSweepCell(currentSweepIndex);
+    lastTrackedMeshChangeAt = performance.now();
+    status = `Sweeping ${currentSweepIndex + 1} of ${sweepPlan.cells.length} cells...`;
+  }
+
+  async function saveExport(): Promise<void> {
+    if (isSaving) {
+      return;
+    }
+
+    if (exportedFilesBySourceUrl.size === 0) {
+      status = "[BerlinFlight] Sweep finished without collecting any tracked tile meshes.";
       return;
     }
 
     isSaving = true;
+    status = "Saving full-Berlin cone source export...";
     saveMessage = "";
 
     try {
-      const exportResult = buildBerlinConeSourceMeshFile(
-        tilesRuntime.getTrackedTileMeshes(),
-        {
-          center: CAPTURE_CENTER,
-          radiusMeters: CAPTURE_RADIUS_METERS,
-        },
-      );
-      const response = await fetch("/api/berlin-cone-source", {
+      const response = await fetch("/api/berlin-cone-source/full-city", {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          center: CAPTURE_CENTER,
-          radiusMeters: CAPTURE_RADIUS_METERS,
-          sourceFile: exportResult.file,
+          sourceTiles: Array.from(exportedFilesBySourceUrl.entries()).map(
+            ([sourceUrl, file]) => ({
+              sourceUrl,
+              file,
+            }),
+          ),
         }),
       });
       if (!response.ok) {
@@ -134,33 +207,50 @@
       }
 
       const result = await response.json();
-      saveMessage = `Saved ${result.savedMeshes} meshes to center-1km.json and updated source-manifest.json`;
+      saveMessage = `Saved ${result.savedSourceFiles} source files and ${result.savedMeshes} meshes to full-berlin export.`;
+      status = "Full-Berlin cone source export complete.";
     } catch (error) {
-      saveMessage =
-        error instanceof Error ? error.message : "Failed to save cone source capture.";
+      status =
+        error instanceof Error
+          ? error.message
+          : "Failed to save the full-Berlin cone source export.";
     } finally {
       isSaving = false;
     }
+  }
+
+  function moveCameraToSweepCell(index: number): void {
+    if (!camera) {
+      return;
+    }
+
+    const cell = sweepPlan.cells[index];
+    camera.position.set(cell.x, CAMERA_HEIGHT, cell.z);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(cell.x, 0, cell.z);
+    camera.updateMatrixWorld(true);
   }
 </script>
 
 <main>
   <section class="panel">
     <div class="meta">
-      <h1>Berlin Cone Source Capture</h1>
+      <h1>Berlin Cone Source Export</h1>
       <div class="stats">
-        <span>center {CAPTURE_CENTER.x}, {CAPTURE_CENTER.z}</span>
-        <span>radius {CAPTURE_RADIUS_METERS}m</span>
+        <span>tileset {BERLIN_OFFLINE_TILES_URL}</span>
+        <span>sweep step {SWEEP_STEP_METERS}m</span>
+        <span>sweep cells {sweepPlan.cells.length}</span>
         <span>progress {loadProgress.toFixed(2)}</span>
         <span>visible tiles {visibleTiles}</span>
         <span>active tiles {activeTiles}</span>
         <span>tracked meshes {trackedMeshes}</span>
-        <span>meshes in radius {sourceMeshesInRadius}</span>
-        <span>chunk budget {BERLIN_CONE_GRID.MAX_CHUNK_LOADS_PER_TICK}</span>
+        <span>captured source tiles {capturedSourceTiles}</span>
+        <span>captured meshes {capturedMeshes}</span>
+        <span>current cell {Math.min(currentSweepIndex + 1, sweepPlan.cells.length)} / {sweepPlan.cells.length}</span>
       </div>
       <p>{status}</p>
-      <button onclick={saveCapture} disabled={!isStable || isSaving}>
-        {isSaving ? "Saving..." : "Save 1km Cesium Building Capture"}
+      <button onclick={startSweep} disabled={isSweeping || isSaving || !tilesRuntime}>
+        {isSweeping ? "Sweeping..." : isSaving ? "Saving..." : "Start Full-Berlin Sweep"}
       </button>
       {#if saveMessage}
         <p class="message">{saveMessage}</p>

@@ -1,6 +1,9 @@
 import type { TrackedTileMesh } from "../collision/tile-mesh-types";
 import { updateTrackedMeshWorldSphere } from "../collision/cone-mesh-bounds";
-import type { BerlinConeSourceMeshFile } from "./source-contracts";
+import type {
+  BerlinConeSourceMeshFile,
+  BerlinConeSourceMeshRecord,
+} from "./source-contracts";
 
 export interface BerlinConeSourceExportOptions {
   center: {
@@ -29,11 +32,7 @@ export function buildBerlinConeSourceMeshFile(
       return deltaX * deltaX + deltaZ * deltaZ <= radiusSq;
     })
     .sort(compareTrackedMeshes)
-    .map((trackedMesh) => ({
-      positions: Array.from(trackedMesh.positions),
-      matrixWorld: Array.from(trackedMesh.mesh.matrixWorld.elements),
-      sourceUrl: trackedMesh.sourceUrl,
-    }));
+    .map(createBerlinConeSourceMeshRecord);
 
   return {
     file: {
@@ -42,6 +41,16 @@ export function buildBerlinConeSourceMeshFile(
     },
     sourceMeshesInRadius: meshes.length,
     trackedMeshesSeen: trackedMeshes.length,
+  };
+}
+
+export function createBerlinConeSourceMeshRecord(
+  trackedMesh: TrackedTileMesh,
+): BerlinConeSourceMeshRecord {
+  return {
+    positions: Array.from(trackedMesh.positions),
+    matrixWorld: Array.from(trackedMesh.mesh.matrixWorld.elements),
+    sourceUrl: trackedMesh.sourceUrl,
   };
 }
 

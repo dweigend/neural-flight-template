@@ -132,3 +132,19 @@ export function ecefToGeo(point: WorldPoint): GeoPoint {
     height,
   };
 }
+
+export function geoToLocal(
+  origin: GeoPoint,
+  point: GeoPoint,
+): WorldPoint {
+  const ecef = geoToECEF(point);
+  const local = new THREE.Vector3(ecef.x, ecef.y, ecef.z).applyMatrix4(
+    getECEFToLocalMatrix(origin),
+  );
+
+  return {
+    x: local.x,
+    y: local.y,
+    z: local.z,
+  };
+}

@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { preprocessTrackedMesh } from "../collision/mesh-preprocess";
 import { buildBerlinConeSourceMeshFile } from "./source-export";
+import { buildBerlinSourceFilesBySourceUrl } from "./full-city-export";
 
 function createTrackedMesh(sourceUrl, position) {
   const geometry = new THREE.BoxGeometry(60, 30, 60, 1, 1, 1);
@@ -36,4 +37,22 @@ test("buildBerlinConeSourceMeshFile exports all tracked meshes within the radius
   expect(result.sourceMeshesInRadius).toBe(2);
   expect(result.file.meshes).toHaveLength(2);
   expect(result.file.meshes[0].positions.length).toBeGreaterThan(0);
+});
+
+test("buildBerlinSourceFilesBySourceUrl groups meshes by sourceUrl and skips seen tiles", () => {
+  const trackedMeshes = [
+    createTrackedMesh("tile-b", new THREE.Vector3(800, 20, 0)),
+    createTrackedMesh("tile-a", new THREE.Vector3(0, 20, 0)),
+    createTrackedMesh("tile-a", new THREE.Vector3(30, 20, 0)),
+  ];
+
+  const result = buildBerlinSourceFilesBySourceUrl(
+    trackedMeshes,
+    new Set(["tile-b"]),
+  );
+
+  expect(result.sourceUrlsAdded).toBe(1);
+  expect(result.meshesAdded).toBe(2);
+  expect(Array.from(result.filesBySourceUrl.keys())).toEqual(["tile-a"]);
+  expect(result.filesBySourceUrl.get("tile-a")?.meshes).toHaveLength(2);
 });
