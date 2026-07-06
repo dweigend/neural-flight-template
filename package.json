@@ -10,6 +10,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"berlin:cone-manifest": "bun run scripts/berlin-flight/build-full-berlin-source-manifest.ts",
+		"berlin:cone-dataset": "bun run scripts/berlin-flight/build-cone-dataset.ts src/lib/experiences/berlin-flight/cone-data/source-manifest.full-berlin.json",
 		"hotspot:start": "bash scripts/hotspot/hotspot.sh start",
 		"hotspot:stop": "bash scripts/hotspot/hotspot.sh stop",
 		"hotspot:setup": "bash scripts/hotspot/hotspot.sh setup"

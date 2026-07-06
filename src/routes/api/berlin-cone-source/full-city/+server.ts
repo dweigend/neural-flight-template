@@ -2,6 +2,12 @@ import { json } from "@sveltejs/kit";
 import { createHash } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  BERLIN_FULL_CITY_OUTPUT_DIR,
+  BERLIN_FULL_CITY_SOURCE_MANIFEST_PATH,
+  BERLIN_FULL_CITY_SOURCE_MESH_DIR,
+  createBerlinFullCitySourceManifest,
+} from "$lib/experiences/berlin-flight/cone-data/full-city-manifest";
 
 type FullCityConeSourceExportRequest = {
   outputDir?: unknown;
@@ -20,13 +26,6 @@ type ParsedSourceTile = {
   };
 };
 
-const DEFAULT_OUTPUT_DIR =
-  "src/lib/experiences/berlin-flight/cone-data/generated";
-const FULL_CITY_SOURCE_DIR =
-  "src/lib/experiences/berlin-flight/cone-data/source-meshes/full-berlin";
-const FULL_CITY_MANIFEST_PATH =
-  "src/lib/experiences/berlin-flight/cone-data/source-manifest.full-berlin.json";
-
 export async function POST({ request }) {
   const body = (await request.json()) as FullCityConeSourceExportRequest;
   const sourceTiles = parseSourceTiles(body.sourceTiles);
@@ -37,36 +36,39 @@ export async function POST({ request }) {
   const outputDir =
     typeof body.outputDir === "string" && body.outputDir.length > 0
       ? body.outputDir
-      : DEFAULT_OUTPUT_DIR;
-  const sourceDir = path.resolve(process.cwd(), FULL_CITY_SOURCE_DIR);
-  const manifestPath = path.resolve(process.cwd(), FULL_CITY_MANIFEST_PATH);
+      : BERLIN_FULL_CITY_OUTPUT_DIR;
+  const sourceDir = path.resolve(process.cwd(), BERLIN_FULL_CITY_SOURCE_MESH_DIR);
+  const manifestPath = path.resolve(
+    process.cwd(),
+    BERLIN_FULL_CITY_SOURCE_MANIFEST_PATH,
+  );
 
   await rm(sourceDir, { force: true, recursive: true });
   await mkdir(sourceDir, { recursive: true });
 
-  const sources = [];
+  const sourceFiles = [];
   let meshCount = 0;
 
   for (const sourceTile of sourceTiles.sort(compareSourceTiles)) {
     const fileName = createSourceFileName(sourceTile.sourceUrl);
     const absoluteFilePath = path.join(sourceDir, fileName);
-    const relativeFilePath = `./source-meshes/full-berlin/${fileName}`;
 
     await writeFile(absoluteFilePath, JSON.stringify(sourceTile.file, null, 2));
-    sources.push({
-      path: relativeFilePath,
+    sourceFiles.push({
+      fileName,
       sourceUrl: sourceTile.sourceUrl,
     });
     meshCount += sourceTile.file.meshes.length;
   }
 
+  const manifest = createBerlinFullCitySourceManifest(sourceFiles);
+
   await writeFile(
     manifestPath,
     JSON.stringify(
       {
-        version: 1,
         outputDir,
-        sources,
+        ...manifest,
       },
       null,
       2,
@@ -76,7 +78,7 @@ export async function POST({ request }) {
   return json({
     manifestPath,
     outputDir,
-    savedSourceFiles: sources.length,
+    savedSourceFiles: manifest.sources.length,
     savedMeshes: meshCount,
     sourceDir,
   });
