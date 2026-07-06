@@ -7,8 +7,8 @@
   } from "$lib/experiences/berlin-flight/cone-data/full-city-export";
   import type { BerlinConeSourceMeshFile } from "$lib/experiences/berlin-flight/cone-data/source-contracts";
   import {
-    BERLIN_OFFLINE_TILES_URL,
-    resolveOfflineBerlinTilesSource,
+    isBerlinTilesSourceConfigured,
+    resolveBerlinTilesSource,
   } from "$lib/experiences/berlin-flight/runtime/tiles-source";
   import { TilesRuntimeAdapter } from "$lib/experiences/berlin-flight/runtime/tiles-runtime";
 
@@ -25,8 +25,9 @@
   let camera: THREE.PerspectiveCamera | null = null;
   let tilesGroup: THREE.Group | null = null;
   let tilesRuntime = $state<TilesRuntimeAdapter | null>(null);
+  let sourceLabel = $state("Cesium source not resolved");
 
-  let status = $state(`Waiting for offline tiles at ${BERLIN_OFFLINE_TILES_URL}...`);
+  let status = $state("Waiting for Berlin Cesium source...");
   let trackedMeshes = $state(0);
   let activeTiles = $state(0);
   let visibleTiles = $state(0);
@@ -56,6 +57,12 @@
 
   async function setup(): Promise<void> {
     try {
+      if (!isBerlinTilesSourceConfigured()) {
+        throw new Error(
+          "[BerlinFlight] Cesium source is not configured. Set PUBLIC_BERLIN_TILES_URL or PUBLIC_CESIUM_ION_TOKEN with PUBLIC_BERLIN_ION_ASSET_ID before running the full-Berlin exporter.",
+        );
+      }
+
       scene = new THREE.Scene();
       tilesGroup = new THREE.Group();
       scene.add(tilesGroup);
@@ -72,10 +79,11 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
       renderer.setSize(window.innerWidth, window.innerHeight);
 
-      const source = await resolveOfflineBerlinTilesSource();
+      const source = await resolveBerlinTilesSource();
+      sourceLabel = source.url;
       tilesRuntime = await TilesRuntimeAdapter.create(tilesGroup, source);
       lastTrackedMeshChangeAt = performance.now();
-      status = "Ready to sweep offline Berlin tiles.";
+      status = "Ready to sweep Berlin via the configured Cesium source.";
       renderer.setAnimationLoop(tick);
     } catch (error) {
       status =
@@ -237,7 +245,7 @@
     <div class="meta">
       <h1>Berlin Cone Source Export</h1>
       <div class="stats">
-        <span>tileset {BERLIN_OFFLINE_TILES_URL}</span>
+        <span>source {sourceLabel}</span>
         <span>sweep step {SWEEP_STEP_METERS}m</span>
         <span>sweep cells {sweepPlan.cells.length}</span>
         <span>progress {loadProgress.toFixed(2)}</span>

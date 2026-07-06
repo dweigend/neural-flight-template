@@ -20,7 +20,8 @@ Success criteria:
 
 - precompute scope: whole Berlin dataset, not “first visit” cache
 - runtime key: stable world-space chunk coordinates, not `tileUrl`
-- persistence model: shipped or generated artifact, not browser-local IndexedDB as the primary source
+- source acquisition: stream Cesium tiles once, export source meshes locally, then build cone artifacts from those local exports
+- persistence model: local exported source meshes plus generated cone chunks, not browser-local IndexedDB as the primary source
 - heatmap placement rule: baked into the generated dataset before runtime
 - runtime behavior: load nearby cone chunks by player position
 - existing live cone-generation path: removable after validation
@@ -47,8 +48,12 @@ Tile reloads
 Target model:
 
 ```text
+One-time source capture
+  -> stream Cesium tiles across Berlin once
+  -> export tracked tile meshes grouped by stable tile identity
+
 Offline build step
-  -> scan Berlin source data once
+  -> read exported Berlin source meshes once
   -> apply heatmap density placement rule once
   -> extract accepted cone volumes once
   -> write cone chunks keyed by world region
@@ -60,13 +65,18 @@ Runtime
   -> unload far cone chunks from memory
 ```
 
-The expensive part moves out of the headset runtime and into an offline asset-generation step.
+The expensive part moves out of the headset runtime and into a one-time capture plus offline asset-generation step.
 
 ## Architecture
 
 ```text
-Offline generator
-  -> Berlin tiles / source meshes
+One-time source capture
+  -> Cesium streamed Berlin tiles
+  -> tracked tile meshes
+  -> local source-mesh files grouped by tile identity
+
+offline generator
+  -> exported source meshes
   -> roof-corner extraction
   -> heatmap-based candidate limiting
   -> placement filtering
@@ -580,6 +590,130 @@ Return:
 - final recommendation on whether further runtime incrementality is needed
 ```
 
+## Phase 8 - Export full-Berlin cone source meshes from streamed Cesium tiles
+
+### Objective
+
+Replace the current 1km Berlin-center sample capture with a repeatable full-city source export that streams the live Cesium source once and saves the resulting source meshes locally.
+
+### Deliverables
+
+- an exporter path that resolves the existing Berlin Cesium source through `resolveBerlinTilesSource()`
+- a sweep across Berlin coverage that captures tracked tile meshes
+- source-mesh files written under `cone-data/source-meshes/`
+- dedupe keyed by tile `sourceUrl`, not by sweep cell or player position
+- clear local output that can be reused by later dataset rebuilds without re-streaming Berlin
+
+### Checks
+
+- reuse `TilesRuntimeAdapter` and `getTrackedTileMeshes()` rather than writing a second tile parser first
+- do not keep all Berlin geometry in one giant source JSON file
+- do not treat the current `center-1km.json` capture as the final source input
+- group output by stable tile identity so repeated runs can skip or overwrite deterministically
+- fail clearly when the Cesium source is not configured or the sweep collects no meshes
+- the exporter should save local artifacts; it should not require a pre-downloaded `/tiles/berlin/tileset.json`
+
+### Notes
+
+This phase closes the gap between:
+
+- proving the cone dataset pipeline on a small sample
+- producing the real full-Berlin cone source input
+
+The shortest path is:
+
+1. resolve the existing Berlin Cesium source through the normal runtime source resolver
+2. load it through the existing Berlin tile runtime
+3. move a capture camera across a coarse Berlin grid
+4. wait for tile loading to stabilize at each step
+5. export unseen tracked meshes grouped by tile `sourceUrl`
+6. save those source meshes locally so later dataset rebuilds do not need to hit Cesium again
+
+### Coding agent prompt
+
+```text
+Build the full-Berlin cone source export path on top of the existing streamed Cesium tiles runtime.
+
+Constraints:
+- reuse TilesRuntimeAdapter and tracked mesh export code where practical
+- no any
+- do not add a second raw 3D Tiles parser unless the runtime sweep is clearly insufficient
+- keep the exporter scoped to berlin-flight
+- prefer multiple source mesh files over one giant file
+
+Tasks:
+1. Load the configured Berlin Cesium source through the existing runtime path.
+2. Add a sweep/export flow that moves across Berlin coverage and waits for tile loading to settle.
+3. Collect tracked meshes from getTrackedTileMeshes().
+4. Group exported meshes by stable tile sourceUrl and write source-mesh files under cone-data/source-meshes/.
+5. Dedupe exported output by tile sourceUrl so overlapping sweep cells do not create duplicate geometry.
+6. Save the exported source meshes locally so future dataset rebuilds do not need to re-stream Cesium.
+7. Fail clearly when the Cesium source is not configured or the sweep does not collect any meshes.
+
+Return:
+- exporter entrypoint
+- sweep strategy
+- source-mesh file layout
+- dedupe key
+- any assumptions about Cesium availability during the one-time export
+```
+
+## Phase 9 - Emit the full-Berlin source manifest and rebuild the final cone dataset
+
+### Objective
+
+Turn the exported full-city source meshes into the final manifest input for the cone dataset build, then rebuild the chunked cone asset for all of Berlin.
+
+### Deliverables
+
+- a full-Berlin cone source manifest listing all exported source-mesh files
+- no `center` or `radiusMeters` filter in the final full-city manifest
+- a documented rebuild command for the final citywide dataset
+- regenerated `cone-data/generated/` output based on the full manifest
+
+### Checks
+
+- do not keep the sample `radiusMeters: 1000` filter in the final manifest
+- do not rebuild the final dataset from only `center-1km.json`
+- preserve deterministic manifest ordering
+- keep the output path compatible with the existing cone dataset builder
+- the final manifest should be usable directly by `build-cone-dataset.ts`
+
+### Notes
+
+The current sample capture is useful for proving the pipeline, but the final citywide build should:
+
+- list many source files
+- omit the sample radius filter
+- feed all exported Berlin source meshes into the existing dataset builder
+
+The final full-city source manifest should be boring and explicit. It should point at the locally saved source-mesh exports from phase 8, and it should not require Cesium access during the rebuild itself.
+
+### Coding agent prompt
+
+```text
+Emit the final full-Berlin cone source manifest and rebuild the precomputed cone dataset from it.
+
+Constraints:
+- no any
+- reuse the existing source manifest contract and build-cone-dataset script
+- keep ordering deterministic
+- do not leave the final build dependent on the 1km sample capture
+
+Tasks:
+1. Generate a full-Berlin cone source manifest that lists all exported source-mesh files.
+2. Omit center/radius filters from the final manifest so the builder consumes the full city export.
+3. Keep manifest entries ordered deterministically.
+4. Run or document the final dataset rebuild through build-cone-dataset.ts using the new manifest.
+5. Confirm the generated cone-data output now represents the full exported Berlin source set rather than the sample capture.
+
+Return:
+- final manifest path
+- whether the build was run or only wired/documented
+- final rebuild command
+- any remaining size or runtime risks worth measuring later
+```
+
 ## Migration order
 
 Implementation order should follow the phases:
@@ -591,11 +725,25 @@ Implementation order should follow the phases:
 5. Phase 5 - collision adaptation
 6. Phase 6 - remove old runtime path
 7. Phase 7 - Quest validation and tuning
+8. Phase 8 - full-Berlin source export from streamed Cesium tiles
+9. Phase 9 - full-Berlin manifest and final dataset rebuild
 
 The key rule is simple:
 
 ```text
 Do not remove the live runtime path until the offline-generated chunk dataset is loading correctly in the scene.
+```
+
+For the real full-city asset, another rule matters:
+
+```text
+Do not treat the 1km Berlin-center source capture as the final build input. The final dataset must be rebuilt from the full-Berlin exported source manifest.
+```
+
+And for source acquisition:
+
+```text
+Use Cesium only for the one-time full-Berlin source export. The final cone dataset rebuild must run from the locally saved source-mesh exports, not from live tile streaming.
 ```
 
 ## Non-goals for the first pass

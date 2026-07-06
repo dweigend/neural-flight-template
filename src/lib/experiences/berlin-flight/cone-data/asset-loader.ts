@@ -17,12 +17,26 @@ type ImportGlob = (
   options: { import: "default" },
 ) => Record<string, ImportGlobModuleLoader>;
 
-const manifestModules = getImportGlob()?.("./generated/manifest.json", {
-  import: "default",
-}) ?? {};
-const chunkModules = getImportGlob()?.("./generated/chunks/*.json", {
-  import: "default",
-}) ?? {};
+const manifestModules: Record<string, ImportGlobModuleLoader> =
+  "glob" in import.meta
+    ? (
+        import.meta as ImportMeta & {
+          glob: ImportGlob;
+        }
+      ).glob("./generated/manifest.json", {
+        import: "default",
+      })
+    : {};
+const chunkModules: Record<string, ImportGlobModuleLoader> =
+  "glob" in import.meta
+    ? (
+        import.meta as ImportMeta & {
+          glob: ImportGlob;
+        }
+      ).glob("./generated/chunks/*.json", {
+        import: "default",
+      })
+    : {};
 
 export function createBerlinConeDatasetAssetLoader(): BerlinConeDatasetAssetLoader {
   return {
@@ -192,11 +206,4 @@ function parseBerlinConeChunkKey(value: string): BerlinConeChunkKey {
   }
 
   return value as BerlinConeChunkKey;
-}
-
-function getImportGlob(): ImportGlob | null {
-  const meta = import.meta as ImportMeta & {
-    glob?: ImportGlob;
-  };
-  return typeof meta.glob === "function" ? meta.glob : null;
 }
