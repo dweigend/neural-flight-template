@@ -38,33 +38,21 @@ export class BerlinConeDatasetLoadError extends Error {
 }
 
 type ImportGlobModuleLoader = () => Promise<unknown>;
-type ImportGlob = (
-  pattern: string,
-  options: { import: "default" },
-) => Record<string, ImportGlobModuleLoader>;
-
-const manifestModules: Record<string, ImportGlobModuleLoader> =
-  "glob" in import.meta
-    ? (
-        import.meta as ImportMeta & {
-          glob: ImportGlob;
-        }
-      ).glob("./generated/manifest.json", {
-        import: "default",
-      })
-    : {};
-const chunkModules: Record<string, ImportGlobModuleLoader> =
-  "glob" in import.meta
-    ? (
-        import.meta as ImportMeta & {
-          glob: ImportGlob;
-        }
-      ).glob("./generated/chunks/*.json", {
-        import: "default",
-      })
-    : {};
 
 export function createBerlinConeDatasetAssetLoader(): BerlinConeDatasetAssetLoader {
+  const manifestModules: Record<string, ImportGlobModuleLoader> = import.meta.glob(
+    "./generated/manifest.json",
+    {
+      import: "default",
+    },
+  );
+  const chunkModules: Record<string, ImportGlobModuleLoader> = import.meta.glob(
+    "./generated/chunks/*.json",
+    {
+      import: "default",
+    },
+  );
+
   return {
     async loadManifest(): Promise<BerlinConeDatasetManifest> {
       const manifestModule = Object.values(manifestModules)[0];
