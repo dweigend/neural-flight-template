@@ -1,4 +1,7 @@
-import type { BerlinConeSourceManifest } from "./source-contracts";
+import type {
+  BerlinConeSourceManifest,
+  BerlinConeSourceMeshFile,
+} from "./source-contracts";
 
 export const BERLIN_FULL_CITY_SOURCE_MESH_DIR =
   "src/lib/experiences/berlin-flight/cone-data/source-meshes/full-berlin";
@@ -23,6 +26,33 @@ export function createBerlinFullCitySourceManifest(
     outputDir: BERLIN_FULL_CITY_OUTPUT_DIR,
     sources,
   };
+}
+
+export function getBerlinFullCitySourceUrl(
+  sourceFile: BerlinConeSourceMeshFile,
+  filePath: string,
+): string {
+  if (sourceFile.meshes.length === 0) {
+    throw new Error(
+      `[BerlinFlight] Full-Berlin source mesh file ${filePath} has no meshes.`,
+    );
+  }
+
+  const sourceUrls = Array.from(
+    new Set(
+      sourceFile.meshes
+        .map((mesh) => mesh.sourceUrl)
+        .filter((sourceUrl): sourceUrl is string => typeof sourceUrl === "string"),
+    ),
+  );
+
+  if (sourceUrls.length !== 1) {
+    throw new Error(
+      `[BerlinFlight] Full-Berlin source mesh file ${filePath} must contain exactly one tile sourceUrl.`,
+    );
+  }
+
+  return sourceUrls[0];
 }
 
 function compareSourceFiles(
