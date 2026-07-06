@@ -13,6 +13,7 @@ export interface BerlinDensitySampler {
 }
 
 export interface BerlinCornerFilterResult {
+  stagedCandidates: number;
   acceptedPoints: readonly BerlinAcceptedShadowOriginPoint[];
   rejectedBySpacing: number;
 }
@@ -79,6 +80,7 @@ export function filterBerlinRoofCornerCandidates(
 ): BerlinCornerFilterResult {
   if (candidates.length === 0) {
     return {
+      stagedCandidates: 0,
       acceptedPoints: [],
       rejectedBySpacing: 0,
     };
@@ -87,6 +89,7 @@ export function filterBerlinRoofCornerCandidates(
   const stagedCandidates = applyBerlinCornerCandidateStage(candidates, sampler);
   if (stagedCandidates.length === 0) {
     return {
+      stagedCandidates: 0,
       acceptedPoints: [],
       rejectedBySpacing: 0,
     };
@@ -118,6 +121,7 @@ export function filterBerlinRoofCornerCandidates(
   }
 
   return {
+    stagedCandidates: stagedCandidates.length,
     acceptedPoints,
     rejectedBySpacing,
   };
@@ -197,11 +201,7 @@ function getRepresentativePosition(
 }
 
 export function getAllowedCandidateCount(density: number): number {
-  if (density < 0.34) {
-    return 0;
-  }
-
-  if (density < 0.67) {
+  if (density < 0.5) {
     return 1;
   }
 

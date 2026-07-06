@@ -13,9 +13,9 @@ afterEach(() => {
 });
 
 test("getAllowedCandidateCount applies the heatmap thresholds", () => {
-  expect(getAllowedCandidateCount(0.339)).toBe(0);
-  expect(getAllowedCandidateCount(0.34)).toBe(1);
-  expect(getAllowedCandidateCount(0.67)).toBe(2);
+  expect(getAllowedCandidateCount(0)).toBe(1);
+  expect(getAllowedCandidateCount(0.499)).toBe(1);
+  expect(getAllowedCandidateCount(0.5)).toBe(2);
 });
 
 test("applyBerlinCornerCandidateStage trims each building deterministically from sampled density", () => {
@@ -48,6 +48,7 @@ test("applyBerlinCornerCandidateStage trims each building deterministically from
   expect(
     stagedCandidates.map((candidate) => `${candidate.buildingId}:${candidate.cornerIndex}`),
   ).toEqual([
+    "bright-building:1",
     "mid-building:3",
     "dark-building:7",
     "dark-building:4",

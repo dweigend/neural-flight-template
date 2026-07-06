@@ -6,10 +6,10 @@
   },
   "chunkSizeMeters": 1920,
   "bounds": {
-    "minChunkX": 0,
-    "maxChunkX": 1,
-    "minChunkZ": 0,
-    "maxChunkZ": 0
+    "minChunkX": -14,
+    "maxChunkX": 1981,
+    "minChunkZ": -488,
+    "maxChunkZ": 11
   },
-  "chunkCount": 2
+  "chunkCount": 768
 }

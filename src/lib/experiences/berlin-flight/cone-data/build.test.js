@@ -2,6 +2,10 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import {
+  createBerlinConeChunkSnapshot,
+  parseBerlinConeChunkData,
+} from "./asset-loader";
+import {
   buildBerlinConeDataset,
   createTrackedMeshFromOfflineGeometry,
 } from "./build";
@@ -39,6 +43,10 @@ test("buildBerlinConeDataset creates chunked cone output from offline meshes", (
 
   expect(result.manifest.chunkCount).toBeGreaterThan(0);
   expect(result.stats.scannedBuildings).toBe(3);
+  expect(result.stats.rawCandidates).toBeGreaterThan(0);
+  expect(result.stats.stagedCandidates).toBeGreaterThan(0);
+  expect(result.stats.rejectedByDensity).toBeGreaterThanOrEqual(0);
+  expect(result.stats.rejectedBySpacing).toBeGreaterThanOrEqual(0);
   expect(result.stats.generatedCones).toBeGreaterThan(0);
 
   const firstChunk = Array.from(result.chunks.values())[0];
@@ -69,5 +77,47 @@ test("buildBerlinConeDataset can filter buildings by radius around a center", ()
 
   expect(result.stats.sourceMeshes).toBe(2);
   expect(result.stats.scannedBuildings).toBe(2);
+  expect(result.stats.rawCandidates).toBeGreaterThan(0);
   expect(result.stats.generatedCones).toBeGreaterThan(0);
+});
+
+test("buildBerlinConeDataset chunk data round-trips through the runtime loader", () => {
+  const trackedMeshes = [
+    createBoxTrackedMesh("mesh-a", new THREE.Vector3(0, 20, 0)),
+    createBoxTrackedMesh("mesh-b", new THREE.Vector3(120, 20, 0)),
+  ];
+
+  const result = buildBerlinConeDataset({
+    trackedMeshes,
+    densitySampler: {
+      sampleDensity() {
+        return 1;
+      },
+    },
+  });
+
+  const firstChunk = Array.from(result.chunks.values())[0];
+  const parsedChunk = parseBerlinConeChunkData({
+    chunkKey: firstChunk.chunkKey,
+    chunkWorldMinX: firstChunk.chunkWorldMinX,
+    chunkWorldMinZ: firstChunk.chunkWorldMinZ,
+    chunkSizeMeters: firstChunk.chunkSizeMeters,
+    positions: Array.from(firstChunk.positions),
+    scalars: Array.from(firstChunk.scalars),
+    coneIndex: Array.from(firstChunk.coneIndex),
+  });
+  const snapshot = createBerlinConeChunkSnapshot(parsedChunk);
+
+  expect(snapshot.key).toBe(firstChunk.chunkKey);
+  expect(snapshot.cones).toHaveLength(firstChunk.coneIndex.length);
+  expect(snapshot.cones[0].tip.toArray()).toEqual([
+    firstChunk.positions[0],
+    firstChunk.positions[1],
+    firstChunk.positions[2],
+  ]);
+  expect(snapshot.cones[0].axisDirection.toArray()).toEqual([
+    firstChunk.positions[3],
+    firstChunk.positions[4],
+    firstChunk.positions[5],
+  ]);
 });

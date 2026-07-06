@@ -34,7 +34,10 @@ type MutableChunkBuffers = {
 export interface BerlinConeDatasetBuildStats {
   sourceMeshes: number;
   scannedBuildings: number;
-  scannedCandidates: number;
+  rawCandidates: number;
+  stagedCandidates: number;
+  rejectedByDensity: number;
+  rejectedBySpacing: number;
   acceptedPoints: number;
   generatedCones: number;
   skippedMissingNeighborhood: number;
@@ -130,7 +133,10 @@ export function buildBerlinConeDataset(input: {
     stats: {
       sourceMeshes: filteredMeshes.length,
       scannedBuildings: buildingSources.length,
-      scannedCandidates: candidates.length,
+      rawCandidates: candidates.length,
+      stagedCandidates: filterResult.stagedCandidates,
+      rejectedByDensity: candidates.length - filterResult.stagedCandidates,
+      rejectedBySpacing: filterResult.rejectedBySpacing,
       acceptedPoints: filterResult.acceptedPoints.length,
       generatedCones,
       skippedMissingNeighborhood,
