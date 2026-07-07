@@ -12,6 +12,8 @@ export const BERLIN_ION_ASSET_ID = Number(PUBLIC_BERLIN_ION_ASSET_ID);
 export const BERLIN_TILES_URL = PUBLIC_BERLIN_TILES_URL;
 
 export const BERLIN_FLIGHT_BASE_SPEED = 20;
+export const BERLIN_PLAYER_SPAWN_POSITION = { x: 0, y: 100, z: 0 } as const;
+export const BERLIN_TILE_SELECTION_FOV = 110;
 
 export const BERLIN_ALTITUDE_SPEED = {
   MIN_ALTITUDE: 35,

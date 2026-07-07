@@ -47,6 +47,8 @@ export function buildBerlinConeSourceMeshFile(
 export function createBerlinConeSourceMeshRecord(
   trackedMesh: TrackedTileMesh,
 ): BerlinConeSourceMeshRecord {
+  trackedMesh.mesh.updateWorldMatrix(true, false);
+
   return {
     positions: Array.from(trackedMesh.positions),
     matrixWorld: Array.from(trackedMesh.mesh.matrixWorld.elements),

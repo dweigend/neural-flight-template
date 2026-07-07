@@ -39,6 +39,20 @@ test("buildBerlinConeSourceMeshFile exports all tracked meshes within the radius
   expect(result.file.meshes[0].positions.length).toBeGreaterThan(0);
 });
 
+test("buildBerlinConeSourceMeshFile exports current parent transforms", () => {
+  const trackedMesh = createTrackedMesh("tile-a", new THREE.Vector3(0, 20, 0));
+  const parent = new THREE.Group();
+  parent.position.set(120, 0, 0);
+  parent.add(trackedMesh.mesh);
+
+  const result = buildBerlinConeSourceMeshFile([trackedMesh], {
+    center: { x: 120, z: 0 },
+    radiusMeters: 1000,
+  });
+
+  expect(result.file.meshes[0].matrixWorld?.[12]).toBe(120);
+});
+
 test("buildBerlinSourceFilesBySourceUrl groups meshes by sourceUrl and skips seen tiles", () => {
   const trackedMeshes = [
     createTrackedMesh("tile-b", new THREE.Vector3(800, 20, 0)),

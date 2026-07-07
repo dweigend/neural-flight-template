@@ -2,6 +2,10 @@
   import { onDestroy, onMount } from "svelte";
   import * as THREE from "three";
   import {
+    BERLIN_PLAYER_SPAWN_POSITION,
+    BERLIN_TILE_SELECTION_FOV,
+  } from "$lib/experiences/berlin-flight/constants";
+  import {
     buildBerlinSourceFilesBySourceUrl,
     createBerlinFullCitySweepPlan,
   } from "$lib/experiences/berlin-flight/cone-data/full-city-export";
@@ -12,8 +16,11 @@
   } from "$lib/experiences/berlin-flight/runtime/tiles-source";
   import { TilesRuntimeAdapter } from "$lib/experiences/berlin-flight/runtime/tiles-runtime";
 
-  const CAMERA_HEIGHT = 2600;
-  const CAMERA_FAR = 30000;
+  const FALLBACK_CAMERA_HEIGHT = 2600;
+  const CAMERA_HEIGHT = Number.isFinite(BERLIN_PLAYER_SPAWN_POSITION.y)
+    ? BERLIN_PLAYER_SPAWN_POSITION.y
+    : FALLBACK_CAMERA_HEIGHT;
+  const CAMERA_FAR = 10000;
   const SWEEP_STEP_METERS = 2500;
   const STABLE_SETTLE_MS = 1500;
 
@@ -68,7 +75,7 @@
       scene.add(tilesGroup);
 
       camera = new THREE.PerspectiveCamera(
-        85,
+        BERLIN_TILE_SELECTION_FOV,
         window.innerWidth / window.innerHeight,
         1,
         CAMERA_FAR,
@@ -234,9 +241,20 @@
 
     const cell = sweepPlan.cells[index];
     camera.position.set(cell.x, CAMERA_HEIGHT, cell.z);
-    camera.up.set(0, 0, -1);
-    camera.lookAt(cell.x, 0, cell.z);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(getSweepLookAtTarget(index));
     camera.updateMatrixWorld(true);
+  }
+
+  function getSweepLookAtTarget(index: number): THREE.Vector3 {
+    const targetCell =
+      sweepPlan.cells[index + 1] ??
+      sweepPlan.cells[index - 1] ?? {
+        x: sweepPlan.cells[index].x,
+        z: sweepPlan.cells[index].z - 1,
+      };
+
+    return new THREE.Vector3(targetCell.x, CAMERA_HEIGHT, targetCell.z);
   }
 </script>
 
@@ -246,6 +264,8 @@
       <h1>Berlin Cone Source Export</h1>
       <div class="stats">
         <span>source {sourceLabel}</span>
+        <span>camera height {CAMERA_HEIGHT}m</span>
+        <span>camera fov {BERLIN_TILE_SELECTION_FOV}deg</span>
         <span>sweep step {SWEEP_STEP_METERS}m</span>
         <span>sweep cells {sweepPlan.cells.length}</span>
         <span>progress {loadProgress.toFixed(2)}</span>

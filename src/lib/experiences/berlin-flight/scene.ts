@@ -7,7 +7,9 @@ import { BERLIN_DEBUG_OVERLAY_DEFAULT } from "./debug/config";
 import {
   BERLIN_ALTITUDE_SPEED,
   BERLIN_FLIGHT_BASE_SPEED,
+  BERLIN_PLAYER_SPAWN_POSITION,
   BERLIN_TILE_PRELOAD,
+  BERLIN_TILE_SELECTION_FOV,
 } from "./constants";
 import { disposeObjectTree } from "./runtime/cleanup";
 import { BerlinConeGridRuntime } from "./runtime/cone-grid-runtime";
@@ -20,7 +22,6 @@ import {
 import { FlightPlayer } from "$lib/three/player";
 import { CAMERA } from "$lib/config/flight";
 
-const TILE_SELECTION_FOV = 110;
 const scratchPosition = new THREE.Vector3();
 const scratchQuaternion = new THREE.Quaternion();
 const scratchScale = new THREE.Vector3();
@@ -55,7 +56,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
     fov: CAMERA.FOV,
     near: CAMERA.NEAR,
     far: 10000, // Increased for city scale
-    spawnPosition: { x: 0, y: 100, z: 0 },
+    spawnPosition: BERLIN_PLAYER_SPAWN_POSITION,
     baseSpeed: BERLIN_FLIGHT_BASE_SPEED,
     terrainSlowdown: 1.0, // No terrain slowdown for tiles yet
   });
@@ -73,7 +74,7 @@ export async function setup(ctx: SetupContext): Promise<BerlinState> {
   sceneRoot.add(coneRuntime.root);
   const collisionController = new BerlinCollisionController();
   const tileSelectionCamera = new THREE.PerspectiveCamera(
-    Math.max(player.camera.fov, TILE_SELECTION_FOV),
+    Math.max(player.camera.fov, BERLIN_TILE_SELECTION_FOV),
     player.camera.aspect || 1,
     player.camera.near,
     player.camera.far,
@@ -201,7 +202,7 @@ function syncTileSelectionCameras(state: BerlinState): void {
     state.tileSelectionCamera,
     scratchPosition,
     scratchQuaternion,
-    Math.max(state.camera.fov, TILE_SELECTION_FOV),
+    Math.max(state.camera.fov, BERLIN_TILE_SELECTION_FOV),
     state,
   );
 
