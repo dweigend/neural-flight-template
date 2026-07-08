@@ -197,7 +197,12 @@
 		forward.set(0, 0, -1).applyQuaternion(playerQuaternion).normalize();
 
 		playerModel.position.copy(playerPosition);
-		playerModel.quaternion.copy(playerQuaternion);
+		playerModel.rotation.set(
+			THREE.MathUtils.degToRad(-lastOrientation.roll),
+			Math.atan2(-forward.x, -forward.z),
+			THREE.MathUtils.degToRad(lastOrientation.pitch),
+			"YXZ",
+		);
 
 		const targetCameraPosition = playerPosition
 			.clone()
@@ -287,12 +292,4 @@
 	}
 </script>
 
-<canvas bind:this={canvas} class="spectator-canvas"></canvas>
-
-<style>
-	.spectator-canvas {
-		display: block;
-		width: 100vw;
-		height: 100dvh;
-	}
-</style>
+<canvas bind:this={canvas} class="vr-canvas"></canvas>

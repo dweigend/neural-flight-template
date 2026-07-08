@@ -173,7 +173,7 @@ const routes = [
 		icon: Eye,
 		title: "Spectator Monitor",
 		description: "External display for viewers",
-		planned: true,
+		planned: false,
 	},
 	{
 		path: "/dmx",
