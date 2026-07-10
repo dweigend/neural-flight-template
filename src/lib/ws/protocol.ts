@@ -1,5 +1,6 @@
 import type {
 	ControllerMessage,
+	ExperienceRunnerCommand,
 	M5BridgeSettingsUpdate,
 	OrientationData,
 	SettingsUpdate,
@@ -39,6 +40,7 @@ export function parseMessage(raw: string): ControllerMessage {
 	if (isSpeedCommand(data)) return data;
 	if (isSettingsUpdate(data)) return data;
 	if (isM5BridgeSettingsUpdate(data)) return data;
+	if (isExperienceRunnerCommand(data)) return data;
 
 	throw new Error(
 		`Invalid message: unknown type "${(data as Record<string, unknown>).type}"`,
@@ -94,5 +96,20 @@ export function isM5BridgeSettingsUpdate(
 
 	return Object.values(d.settings).every(
 		(value) => typeof value === "number" || typeof value === "boolean",
+	);
+}
+
+export function isExperienceRunnerCommand(
+	data: unknown,
+): data is ExperienceRunnerCommand {
+	if (typeof data !== "object" || data === null) return false;
+	const d = data as Record<string, unknown>;
+	return (
+		d.type === "experience-runner" &&
+		(d.action === "reset-heading" ||
+			d.action === "reset-experience" ||
+			d.action === "pause" ||
+			d.action === "play") &&
+		typeof d.timestamp === "number"
 	);
 }
