@@ -21,9 +21,12 @@ export interface M5BaseDeviceMessage {
 	type: M5DeviceMessageType;
 	deviceId: string;
 	role: M5DeviceRole;
-	seq: number;
-	timeMs: number;
-	quality: number;
+	// Optional: "minimal" firmware variants omit seq/timeMs/quality on some
+	// frame types. They are validated only when present. Orientation frames
+	// re-require `quality` (see M5OrientationMessage) because the bridge uses it.
+	seq?: number;
+	timeMs?: number;
+	quality?: number;
 }
 
 type M5BaseDeviceRecord = M5BaseDeviceMessage & Record<string, unknown>;
@@ -36,12 +39,15 @@ export interface M5RegisterMessage extends M5BaseDeviceMessage {
 
 export interface M5HeartbeatMessage extends M5BaseDeviceMessage {
 	type: "heartbeat";
-	rssi: number;
-	freeHeap: number;
-	batteryVoltage: number;
-	uptimeMs: number;
-	calibrated: boolean;
-	streaming: boolean;
+	// All telemetry fields are optional: "minimal" firmware variants send a
+	// reduced heartbeat (e.g. only rssi + uptimeMs). Heartbeats are status-only
+	// (the bridge does not act on them), so missing fields surface as null.
+	rssi?: number;
+	freeHeap?: number;
+	batteryVoltage?: number;
+	uptimeMs?: number;
+	calibrated?: boolean;
+	streaming?: boolean;
 }
 
 export interface M5ImuMessage extends M5BaseDeviceMessage {
@@ -54,7 +60,11 @@ export interface M5OrientationMessage extends M5BaseDeviceMessage {
 	type: "orientation";
 	pitch: number;
 	roll: number;
-	yaw: number;
+	// Required for orientation: the bridge drops low-quality frames using it.
+	quality: number;
+	// Optional: "minimal" firmware variants omit yaw. The bridge ignores it;
+	// it is only surfaced in the status panel (defaulted to 0 when absent).
+	yaw?: number;
 }
 
 export type M5DeviceMessage =
@@ -102,12 +112,12 @@ export function isM5HeartbeatMessage(
 ): data is M5HeartbeatMessage {
 	if (!hasM5BaseFields(data, "heartbeat")) return false;
 	return (
-		isFiniteNumber(data.rssi) &&
-		isFiniteNonNegativeNumber(data.freeHeap) &&
-		isFiniteNonNegativeNumber(data.batteryVoltage) &&
-		isFiniteNonNegativeNumber(data.uptimeMs) &&
-		typeof data.calibrated === "boolean" &&
-		typeof data.streaming === "boolean"
+		isOptional(data.rssi, isFiniteNumber) &&
+		isOptional(data.freeHeap, isFiniteNonNegativeNumber) &&
+		isOptional(data.batteryVoltage, isFiniteNonNegativeNumber) &&
+		isOptional(data.uptimeMs, isFiniteNonNegativeNumber) &&
+		isOptional(data.calibrated, isBoolean) &&
+		isOptional(data.streaming, isBoolean)
 	);
 }
 
@@ -123,7 +133,8 @@ export function isM5OrientationMessage(
 	return (
 		isFiniteNumber(data.pitch) &&
 		isFiniteNumber(data.roll) &&
-		isFiniteNumber(data.yaw)
+		isOptional(data.yaw, isFiniteNumber) &&
+		isNumberInRange(data.quality, M5_MIN_QUALITY, M5_MAX_QUALITY)
 	);
 }
 
@@ -136,10 +147,18 @@ function hasM5BaseFields(
 		data.type === type &&
 		isNonEmptyString(data.deviceId) &&
 		data.role === "controller" &&
-		isPositiveInteger(data.seq) &&
-		isFiniteNonNegativeNumber(data.timeMs) &&
-		isNumberInRange(data.quality, M5_MIN_QUALITY, M5_MAX_QUALITY)
+		isOptional(data.seq, isPositiveInteger) &&
+		isOptional(data.timeMs, isFiniteNonNegativeNumber) &&
+		isOptional(data.quality, isM5Quality)
 	);
+}
+
+function isM5Quality(data: unknown): data is number {
+	return isNumberInRange(data, M5_MIN_QUALITY, M5_MAX_QUALITY);
+}
+
+function isBoolean(data: unknown): data is boolean {
+	return typeof data === "boolean";
 }
 
 function isM5Vector3(data: unknown): data is M5Vector3 {
@@ -154,11 +173,68 @@ function isM5Vector3(data: unknown): data is M5Vector3 {
 function describeInvalidMessage(data: unknown): string {
 	if (!isRecord(data)) return "message must be a JSON object";
 	if (typeof data.type !== "string") return "type must be a string";
+
+	const baseReason = describeInvalidBaseFields(data);
+	if (baseReason) return baseReason;
+
+	if (data.type === "orientation") {
+		const fieldReason =
+			describeInvalidNumber(data, "pitch") ??
+			describeInvalidNumber(data, "roll") ??
+			describeInvalidOptionalNumber(data, "yaw");
+		if (fieldReason) return fieldReason;
+		if (!isM5Quality(data.quality))
+			return `quality must be a number between ${M5_MIN_QUALITY} and ${M5_MAX_QUALITY} (got ${describeValue(data.quality)})`;
+	}
+
 	return `unsupported shape for type "${data.type}"`;
+}
+
+function describeInvalidBaseFields(data: Record<string, unknown>): string | null {
+	if (!isNonEmptyString(data.deviceId))
+		return `deviceId must be a non-empty string (got ${describeValue(data.deviceId)})`;
+	if (data.role !== "controller")
+		return `role must be "controller" (got ${describeValue(data.role)})`;
+	if (!isOptional(data.seq, isPositiveInteger))
+		return `seq must be a positive integer > 0 when present (got ${describeValue(data.seq)})`;
+	if (!isOptional(data.timeMs, isFiniteNonNegativeNumber))
+		return `timeMs must be a non-negative number when present (got ${describeValue(data.timeMs)})`;
+	if (!isOptional(data.quality, isM5Quality))
+		return `quality must be a number between ${M5_MIN_QUALITY} and ${M5_MAX_QUALITY} when present (got ${describeValue(data.quality)})`;
+	return null;
+}
+
+function describeInvalidNumber(
+	data: Record<string, unknown>,
+	field: string,
+): string | null {
+	if (isFiniteNumber(data[field])) return null;
+	return `${field} must be a finite number (got ${describeValue(data[field])})`;
+}
+
+function describeInvalidOptionalNumber(
+	data: Record<string, unknown>,
+	field: string,
+): string | null {
+	if (isOptional(data[field], isFiniteNumber)) return null;
+	return `${field} must be a finite number when present (got ${describeValue(data[field])})`;
+}
+
+function describeValue(value: unknown): string {
+	if (typeof value === "string") return JSON.stringify(value);
+	if (value === undefined) return "undefined";
+	return String(value);
 }
 
 function isRecord(data: unknown): data is Record<string, unknown> {
 	return typeof data === "object" && data !== null;
+}
+
+function isOptional<T>(
+	data: unknown,
+	guard: (value: unknown) => value is T,
+): data is T | undefined {
+	return data === undefined || guard(data);
 }
 
 function isNonEmptyString(data: unknown): data is string {

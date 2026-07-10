@@ -68,8 +68,9 @@ export function startM5Bridge(
 		activeStates.add(state);
 
 		socket.on("message", (raw: RawData) => {
+			const rawText = rawDataToString(raw);
 			try {
-				const message = parseM5DeviceMessage(rawDataToString(raw));
+				const message = parseM5DeviceMessage(rawText);
 				recordM5DeviceMessage(message);
 				const state = rememberDevice(socket, message, clients);
 				latestDeviceId = message.deviceId;
@@ -77,7 +78,8 @@ export function startM5Bridge(
 			} catch (error) {
 				const message = getErrorMessage(error);
 				recordM5BridgeError(message);
-				console.warn("[m5-bridge] Invalid frame dropped", message);
+				console.warn("[m5-bridge] Invalid frame dropped:", message);
+				console.warn("[m5-bridge] Raw frame was:", truncateFrame(rawText));
 			}
 		});
 
@@ -367,4 +369,9 @@ function rawDataToString(raw: RawData): string {
 
 function getErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function truncateFrame(text: string): string {
+	const MAX = 500;
+	return text.length > MAX ? `${text.slice(0, MAX)}… (${text.length} bytes)` : text;
 }

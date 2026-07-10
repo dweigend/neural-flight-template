@@ -155,12 +155,12 @@ function recordHeartbeatMessage(message: M5HeartbeatMessage, now: number): void 
 	writeStatus({
 		...status,
 		lastHeartbeatAt: now,
-		rssi: message.rssi,
-		freeHeap: message.freeHeap,
-		batteryVoltage: message.batteryVoltage,
-		uptimeMs: message.uptimeMs,
-		calibrated: message.calibrated,
-		streaming: message.streaming,
+		rssi: message.rssi ?? null,
+		freeHeap: message.freeHeap ?? null,
+		batteryVoltage: message.batteryVoltage ?? null,
+		uptimeMs: message.uptimeMs ?? null,
+		calibrated: message.calibrated ?? null,
+		streaming: message.streaming ?? null,
 		updatedAt: now,
 	});
 }
@@ -176,7 +176,7 @@ function recordOrientationMessage(
 		orientation: {
 			pitch: message.pitch,
 			roll: message.roll,
-			yaw: message.yaw,
+			yaw: message.yaw ?? 0,
 			quality: message.quality,
 		},
 		updatedAt: now,
