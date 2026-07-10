@@ -30,9 +30,17 @@ export interface M5BridgeSettingsUpdate {
 	timestamp: number;
 }
 
+/** Experience runner lifecycle controls from the root page */
+export interface ExperienceRunnerCommand {
+	type: "experience-runner";
+	action: "reset-heading" | "reset-experience" | "pause" | "play";
+	timestamp: number;
+}
+
 /** All possible controller → VR scene messages */
 export type ControllerMessage =
 	| OrientationData
 	| SpeedCommand
 	| SettingsUpdate
-	| M5BridgeSettingsUpdate;
+	| M5BridgeSettingsUpdate
+	| ExperienceRunnerCommand;

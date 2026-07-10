@@ -1156,6 +1156,12 @@ input[type="color"] {
 	letter-spacing: 0.05em;
 }
 
+.experience-runner-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
 /* Experience Select */
 
 .experience-select-trigger {

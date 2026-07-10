@@ -12,6 +12,7 @@ import {
 import { createWebSocketClient } from "$lib/ws/client.svelte";
 import {
 	isOrientationData,
+	isExperienceRunnerCommand,
 	isSettingsUpdate,
 	isSpeedCommand,
 } from "$lib/ws/protocol";
@@ -19,6 +20,8 @@ import {
 let canvas: HTMLCanvasElement;
 let renderer: THREE.WebGLRenderer;
 let scene: THREE.Scene;
+let dummyCamera: THREE.PerspectiveCamera;
+let renderCamera: THREE.PerspectiveCamera;
 let vrButton: HTMLElement;
 let score = $state(0);
 let experienceName = $state("ICAROS VR");
@@ -30,10 +33,56 @@ const clock = new THREE.Clock();
 let lastOrientation = { pitch: 0, roll: 0 };
 let lastSpeed = { accelerate: false, brake: false };
 let removeResizeListener: (() => void) | null = null;
+let activeExperience: ActiveExperience | null = null;
+let paused = false;
+let loadingExperience = false;
+
+function installResizeHandler(): void {
+	removeResizeListener?.();
+
+	function onResize(): void {
+		renderCamera.aspect = window.innerWidth / window.innerHeight;
+		renderCamera.updateProjectionMatrix();
+		renderer.setSize(window.innerWidth, window.innerHeight);
+	}
+
+	window.addEventListener("resize", onResize);
+	removeResizeListener = () => window.removeEventListener("resize", onResize);
+	onResize();
+}
+
+async function loadSelectedExperience(): Promise<void> {
+	if (loadingExperience) return;
+	loadingExperience = true;
+	try {
+		if (activeExperience) {
+			unloadExperience(scene);
+			activeExperience = null;
+			renderCamera = dummyCamera;
+		}
+
+		score = 0;
+		const exp = await loadExperience(getActiveExperienceId(), {
+			scene,
+			camera: dummyCamera,
+			renderer,
+		});
+
+		activeExperience = exp;
+		experienceName = exp.manifest.name;
+		hasOutputs = (exp.manifest.outputs?.length ?? 0) > 0;
+		renderCamera = exp.state.camera as THREE.PerspectiveCamera;
+		installResizeHandler();
+		clock.getDelta();
+	} finally {
+		loadingExperience = false;
+	}
+}
 
 onMount(() => {
 	scene = new THREE.Scene();
-	const dummyCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+	dummyCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+	renderCamera = dummyCamera;
 
 	renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 	renderer.setPixelRatio(window.devicePixelRatio);
@@ -45,69 +94,60 @@ onMount(() => {
 	vrButton = VRButton.createButton(renderer);
 	document.body.appendChild(vrButton);
 
-	// Load whichever experience is selected (persisted in localStorage)
-	const experienceId = getActiveExperienceId();
+	installResizeHandler();
+	void loadSelectedExperience();
 
-	loadExperience(experienceId, { scene, camera: dummyCamera, renderer }).then(
-		(exp: ActiveExperience) => {
-			experienceName = exp.manifest.name;
-			hasOutputs = (exp.manifest.outputs?.length ?? 0) > 0;
-			const renderCamera = exp.state.camera as THREE.PerspectiveCamera;
+	renderer.setAnimationLoop(() => {
+		const delta = clock.getDelta();
+		const exp = activeExperience;
 
-			function onResize(): void {
-				renderCamera.aspect = window.innerWidth / window.innerHeight;
-				renderCamera.updateProjectionMatrix();
-				renderer.setSize(window.innerWidth, window.innerHeight);
+		const msg = ws.lastMessage;
+		if (msg && msg.timestamp > lastProcessedTimestamp) {
+			lastProcessedTimestamp = msg.timestamp;
+
+			if (isOrientationData(msg)) {
+				lastOrientation = { pitch: msg.pitch, roll: msg.roll };
 			}
-			window.addEventListener("resize", onResize);
-			removeResizeListener = () =>
-				window.removeEventListener("resize", onResize);
-
-			renderer.setAnimationLoop(() => {
-				const delta = clock.getDelta();
-
-				const msg = ws.lastMessage;
-				if (msg && msg.timestamp > lastProcessedTimestamp) {
-					lastProcessedTimestamp = msg.timestamp;
-
-					if (isOrientationData(msg)) {
-						lastOrientation = { pitch: msg.pitch, roll: msg.roll };
-					}
-					if (isSpeedCommand(msg)) {
-						lastSpeed = {
-							accelerate: msg.action === "accelerate" && msg.active,
-							brake: msg.action === "brake" && msg.active,
-						};
-					}
-					if (isSettingsUpdate(msg)) {
-						for (const key of Object.keys(msg.settings)) {
-							exp.manifest.applySettings(
-								key,
-								msg.settings[key] as number | boolean | string,
-								exp.state,
-								scene,
-							);
-						}
-					}
+			if (isSpeedCommand(msg)) {
+				lastSpeed = {
+					accelerate: msg.action === "accelerate" && msg.active,
+					brake: msg.action === "brake" && msg.active,
+				};
+			}
+			if (isSettingsUpdate(msg) && exp) {
+				for (const key of Object.keys(msg.settings)) {
+					exp.manifest.applySettings(
+						key,
+						msg.settings[key] as number | boolean | string,
+						exp.state,
+						scene,
+					);
 				}
+			}
+			if (isExperienceRunnerCommand(msg)) {
+				if (msg.action === "pause") paused = true;
+				if (msg.action === "play") paused = false;
+				if (msg.action === "reset-experience") void loadSelectedExperience();
+			}
+		}
 
-				exp.manifest.updatePlayer(lastOrientation, lastSpeed, exp.state, delta);
-				const result = exp.manifest.tick(exp.state, {
-					delta,
-					elapsed: clock.elapsedTime,
-					camera: renderCamera,
-					playerPosition: renderCamera.parent?.position ?? new THREE.Vector3(),
-					playerRotation: renderCamera.parent?.rotation ?? new THREE.Euler(),
-				});
-				exp.state = result.state;
-				if (result.outputs?.score !== undefined) {
-					score = result.outputs.score as number;
-				}
-
-				renderer.render(scene, renderCamera);
+		if (!paused && exp) {
+			exp.manifest.updatePlayer(lastOrientation, lastSpeed, exp.state, delta);
+			const result = exp.manifest.tick(exp.state, {
+				delta,
+				elapsed: clock.elapsedTime,
+				camera: renderCamera,
+				playerPosition: renderCamera.parent?.position ?? new THREE.Vector3(),
+				playerRotation: renderCamera.parent?.rotation ?? new THREE.Euler(),
 			});
-		},
-	);
+			exp.state = result.state;
+			if (result.outputs?.score !== undefined) {
+				score = result.outputs.score as number;
+			}
+		}
+
+		renderer.render(scene, renderCamera);
+	});
 
 	return () => {
 		removeResizeListener?.();
@@ -116,7 +156,7 @@ onMount(() => {
 
 onDestroy(() => {
 	renderer?.setAnimationLoop(null);
-	if (scene) unloadExperience(scene);
+	if (scene && activeExperience) unloadExperience(scene);
 	renderer?.dispose();
 	vrButton?.remove();
 	ws.disconnect();

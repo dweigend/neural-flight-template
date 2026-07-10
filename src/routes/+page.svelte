@@ -11,10 +11,12 @@ import {
 	Mountain,
 	Network,
 	Orbit,
+	Pause,
 	Palette,
 	Plane,
 	Play,
 	RadioTower,
+	RefreshCcw,
 	Rocket,
 	Smartphone,
 	TreePine,
@@ -31,6 +33,7 @@ import NodeEditorPreview from "$lib/components/NodeEditorPreview.svelte";
 import PageHeader from "$lib/components/PageHeader.svelte";
 import { listExperiences } from "$lib/experiences/catalog";
 import { setActiveExperienceId } from "$lib/experiences/loader";
+import type { ExperienceRunnerCommand } from "$lib/types/orientation";
 import { createWebSocketClient } from "$lib/ws/client.svelte";
 
 let { data } = $props();
@@ -112,6 +115,7 @@ const experienceOptions: ExperienceOption[] = [
 ];
 
 let selectedExperience = $state("");
+let runnerPaused = $state(false);
 
 function handleExperienceSelect(value: string | undefined): void {
 	if (!value) return;
@@ -119,9 +123,23 @@ function handleExperienceSelect(value: string | undefined): void {
 	setActiveExperienceId(value);
 }
 
+function sendRunnerCommand(action: ExperienceRunnerCommand["action"]): void {
+	ws.send({
+		type: "experience-runner",
+		action,
+		timestamp: Date.now(),
+	});
+}
+
+function toggleRunnerPaused(): void {
+	runnerPaused = !runnerPaused;
+	sendRunnerCommand(runnerPaused ? "pause" : "play");
+}
+
 const selectedOption = $derived(
 	experienceOptions.find((o) => o.id === selectedExperience),
 );
+const runnerControlsDisabled = $derived(ws.status !== "connected");
 
 // ── Routes ──
 
@@ -311,6 +329,31 @@ const techStack = [
 							<span>{selectedOption.author}</span>
 							<span>v{selectedOption.version}</span>
 							<span>{selectedOption.paramCount} params</span>
+						</div>
+						<div class="experience-runner-controls">
+							<button
+								type="button"
+								class="btn btn-secondary btn-sm"
+								onclick={() => sendRunnerCommand("reset-experience")}
+								disabled={runnerControlsDisabled}
+							>
+								<RefreshCcw size={14} />
+								Restart experience
+							</button>
+							<button
+								type="button"
+								class="btn btn-secondary btn-sm"
+								onclick={toggleRunnerPaused}
+								disabled={runnerControlsDisabled}
+							>
+								{#if runnerPaused}
+									<Play size={14} />
+									Play
+								{:else}
+									<Pause size={14} />
+									Pause
+								{/if}
+							</button>
 						</div>
 					{:else}
 						<p class="experience-description experience-description--empty">
